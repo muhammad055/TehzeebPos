@@ -2896,3 +2896,11 @@ input.i18n-dish-name,
   font-size: 17px;
   line-height: 1.8;
 }
+
+/* dir="auto" right-aligns RTL (Urdu) content by default, which misaligns
+   the Name column against its left-aligned "NAME" header — keep the cell
+   itself left-aligned as a block; the Urdu text still flows right-to-left
+   within it. Cards/inputs elsewhere aren't column-aligned so don't need this. */
+.dish-table td.i18n-dish-name {
+  text-align: left;
+}
