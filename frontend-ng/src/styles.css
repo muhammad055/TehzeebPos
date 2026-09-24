@@ -563,12 +563,20 @@ input:focus {
 /* Without explicit widths, the browser's table auto-layout hands leftover
    space to Price/Tax/Actions somewhat arbitrarily, leaving big empty gutters
    in those columns (visible as blank space when a row is hovered/selected).
-   Shrink those to their content and let the Name column absorb the slack. */
+   Shrink those to their content and let the Name column absorb the slack.
+   The `width: 1%` shrink-to-fit trick works for plain text (Price/Tax) but
+   not reliably for the Actions column's flex layout — the table cell can end
+   up narrower than its own flex content, leaving the cell's background/
+   border (and so the hover highlight and row separator line) short of where
+   the buttons actually render. Give that column an explicit min-width
+   instead, generous enough for the wider "Inactive" state of the toggle. */
 .dish-table td:nth-child(3),
-.dish-table td:nth-child(4),
-.dish-table td.action-cell {
+.dish-table td:nth-child(4) {
   width: 1%;
   white-space: nowrap;
+}
+.dish-table td.action-cell {
+  min-width: 150px;
 }
 .dish-table td.i18n-dish-name { width: 100%; }
 
