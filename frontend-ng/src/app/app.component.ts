@@ -1,13 +1,15 @@
 import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from './auth.service';
 import { LanguageService } from './language.service';
+import { ThemeService, THEMES } from './theme.service';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [CommonModule, FormsModule, RouterOutlet, RouterLink, RouterLinkActive],
   template: `
     <nav class="navbar no-print" *ngIf="auth.isLoggedIn()">
       <div class="nav-brand">
@@ -24,6 +26,9 @@ import { LanguageService } from './language.service';
         <a routerLink="/users"     routerLinkActive="active" *ngIf="auth.isAdmin()">Users</a>
       </div>
       <div class="nav-user">
+        <select class="theme-select" title="Theme" [ngModel]="theme.theme()" (ngModelChange)="theme.set($event)">
+          <option *ngFor="let t of themes" [value]="t.id">{{ t.label }}</option>
+        </select>
         <div class="lang-toggle" title="Menu/Sales display language">
           <button [class.lang-toggle-btn--active]="lang.lang() === 'ur'" (click)="lang.set('ur')">اردو</button>
           <button [class.lang-toggle-btn--active]="lang.lang() === 'en'" (click)="lang.set('en')">EN</button>
@@ -43,4 +48,6 @@ import { LanguageService } from './language.service';
 export class AppComponent {
   auth = inject(AuthService);
   lang = inject(LanguageService);
+  theme = inject(ThemeService);
+  themes = THEMES;
 }
