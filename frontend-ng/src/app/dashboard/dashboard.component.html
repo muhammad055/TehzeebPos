@@ -1,0 +1,182 @@
+<div class="page-container no-print">
+
+  <div class="page-header dash-page-header">
+    <div>
+      <h1>Dashboard</h1>
+      <p class="page-subtitle">Sales overview &amp; analytics</p>
+    </div>
+  </div>
+
+  <!-- Loading -->
+  <div class="dash-loading" *ngIf="loading">
+    <div class="dash-spinner"></div>
+    <p>Loading analytics…</p>
+  </div>
+
+  <!-- Error -->
+  <div class="empty-state" *ngIf="error && !loading">
+    Could not load stats. Make sure the backend is running.
+  </div>
+
+  <ng-container *ngIf="!loading && stats">
+
+    <!-- ── Stat Cards ─────────────────────────────────── -->
+    <div class="stat-grid">
+      <div class="stat-card stat-card--accent">
+        <div class="stat-icon">📈</div>
+        <div class="stat-body">
+          <div class="stat-label">Today's Revenue</div>
+          <div class="stat-value">AED {{ stats.todaySales | number:'1.2-2' }}</div>
+          <div class="stat-sub">{{ stats.todayOrderCount }} order{{ stats.todayOrderCount !== 1 ? 's' : '' }} placed</div>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon">🗓</div>
+        <div class="stat-body">
+          <div class="stat-label">Today's Orders</div>
+          <div class="stat-value stat-value--neutral">{{ stats.todayOrderCount }}</div>
+          <div class="stat-sub">orders this session</div>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon">📅</div>
+        <div class="stat-body">
+          <div class="stat-label">This Week</div>
+          <div class="stat-value">AED {{ stats.weekSales | number:'1.2-2' }}</div>
+          <div class="stat-sub">since Sunday</div>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon">🏆</div>
+        <div class="stat-body">
+          <div class="stat-label">This Month</div>
+          <div class="stat-value">AED {{ stats.monthSales | number:'1.2-2' }}</div>
+          <div class="stat-sub">month to date</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── P&L Summary ───────────────────────────────────── -->
+    <div class="card pnl-card">
+      <h2 class="card-title">💰 Profit &amp; Loss</h2>
+      <div class="pnl-grid">
+
+        <!-- Today -->
+        <div class="pnl-col">
+          <div class="pnl-period">Today</div>
+          <div class="pnl-row">
+            <span class="pnl-label">Revenue</span>
+            <span class="pnl-val">{{ stats.todaySales | number:'1.2-2' }}</span>
+          </div>
+          <div class="pnl-row">
+            <span class="pnl-label">Expenses</span>
+            <span class="pnl-val pnl-expense">{{ stats.todayExpenses | number:'1.2-2' }}</span>
+          </div>
+          <div class="pnl-divider"></div>
+          <div class="pnl-row pnl-row--net">
+            <span class="pnl-label">Net</span>
+            <span class="pnl-net" [ngClass]="profitClass(stats.todayProfit)">
+              {{ profitSign(stats.todayProfit) }}{{ stats.todayProfit | number:'1.2-2' }}
+            </span>
+          </div>
+        </div>
+
+        <div class="pnl-sep"></div>
+
+        <!-- This Week -->
+        <div class="pnl-col">
+          <div class="pnl-period">This Week</div>
+          <div class="pnl-row">
+            <span class="pnl-label">Revenue</span>
+            <span class="pnl-val">{{ stats.weekSales | number:'1.2-2' }}</span>
+          </div>
+          <div class="pnl-row">
+            <span class="pnl-label">Expenses</span>
+            <span class="pnl-val pnl-expense">{{ stats.weekExpenses | number:'1.2-2' }}</span>
+          </div>
+          <div class="pnl-divider"></div>
+          <div class="pnl-row pnl-row--net">
+            <span class="pnl-label">Net</span>
+            <span class="pnl-net" [ngClass]="profitClass(stats.weekProfit)">
+              {{ profitSign(stats.weekProfit) }}{{ stats.weekProfit | number:'1.2-2' }}
+            </span>
+          </div>
+        </div>
+
+        <div class="pnl-sep"></div>
+
+        <!-- This Month -->
+        <div class="pnl-col">
+          <div class="pnl-period">This Month</div>
+          <div class="pnl-row">
+            <span class="pnl-label">Revenue</span>
+            <span class="pnl-val">{{ stats.monthSales | number:'1.2-2' }}</span>
+          </div>
+          <div class="pnl-row">
+            <span class="pnl-label">Expenses</span>
+            <span class="pnl-val pnl-expense">{{ stats.monthExpenses | number:'1.2-2' }}</span>
+          </div>
+          <div class="pnl-divider"></div>
+          <div class="pnl-row pnl-row--net">
+            <span class="pnl-label">Net</span>
+            <span class="pnl-net" [ngClass]="profitClass(stats.monthProfit)">
+              {{ profitSign(stats.monthProfit) }}{{ stats.monthProfit | number:'1.2-2' }}
+            </span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── Charts Row ─────────────────────────────────── -->
+    <div class="dash-charts-grid">
+
+      <!-- Best Sellers -->
+      <div class="card">
+        <h2 class="card-title">🥇 Best Selling Items</h2>
+        <div *ngIf="stats.topItems.length; else noItems">
+          <div class="seller-row" *ngFor="let item of stats.topItems; let i = index">
+            <div class="seller-rank" [class.seller-rank--gold]="i === 0" [class.seller-rank--silver]="i === 1" [class.seller-rank--bronze]="i === 2">
+              {{ i + 1 }}
+            </div>
+            <div class="seller-info">
+              <div class="seller-name">{{ item.name }}</div>
+              <div class="seller-bar-wrap">
+                <div class="seller-bar" [style.width.%]="barWidth(item.quantity)"></div>
+              </div>
+            </div>
+            <div class="seller-stats">
+              <span class="seller-qty">{{ item.quantity }}x</span>
+              <span class="seller-rev">AED {{ item.revenue | number:'1.0-0' }}</span>
+            </div>
+          </div>
+        </div>
+        <ng-template #noItems>
+          <p class="empty-state">No sales data yet. Place some orders first.</p>
+        </ng-template>
+      </div>
+
+      <!-- 7-Day Sales Chart -->
+      <div class="card">
+        <h2 class="card-title">📊 Last 7 Days Sales</h2>
+        <div class="bar-chart" *ngIf="stats.last7Days.length">
+          <div class="bar-col" *ngFor="let day of stats.last7Days">
+            <div class="bar-tip">
+              {{ day.total > 0 ? (day.total | number:'1.0-0') : '' }}
+            </div>
+            <div class="bar-bg">
+              <div class="bar-fill" [style.height.%]="barHeight(+day.total)"></div>
+            </div>
+            <div class="bar-lbl">{{ day.date }}</div>
+          </div>
+        </div>
+        <p class="empty-state" *ngIf="!stats.last7Days.length">No data available.</p>
+      </div>
+
+    </div>
+  </ng-container>
+
+</div>

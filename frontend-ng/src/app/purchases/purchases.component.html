@@ -1,0 +1,202 @@
+<div class="page-container">
+
+  <!-- Header -->
+  <div class="page-header purch-header">
+    <div>
+      <h1>Expenses</h1>
+      <p class="page-subtitle">Track supplier invoices &amp; expense receipts</p>
+    </div>
+    <button class="btn btn-primary" (click)="openNew()">+ New Expense</button>
+  </div>
+
+  <!-- Filter Bar -->
+  <div class="card purch-filter-bar">
+    <div class="rpt-filter-row">
+      <div class="rpt-field">
+        <label class="field-label">From</label>
+        <input type="date" [(ngModel)]="filterFrom" />
+      </div>
+      <div class="rpt-field">
+        <label class="field-label">To</label>
+        <input type="date" [(ngModel)]="filterTo" />
+      </div>
+      <div class="rpt-field">
+        <label class="field-label">Category</label>
+        <select [(ngModel)]="filterCategory" style="margin-bottom:0">
+          <option value="">All categories</option>
+          <option *ngFor="let c of categories" [value]="c">{{ c }}</option>
+        </select>
+      </div>
+      <div class="rpt-field rpt-field--btn">
+        <label class="field-label">&nbsp;</label>
+        <button class="btn btn-primary" (click)="load()">Apply</button>
+      </div>
+    </div>
+
+    <!-- Summary strip -->
+    <div class="purch-summary-strip" *ngIf="!loading">
+      <span class="purch-summary-item">
+        <span class="purch-summary-label">Total Spent</span>
+        <span class="purch-summary-value">AED {{ totalSpent | number:'1.2-2' }}</span>
+      </span>
+      <span class="purch-summary-sep">·</span>
+      <span class="purch-summary-item">
+        <span class="purch-summary-label">Receipts</span>
+        <span class="purch-summary-value">{{ purchases.length }}</span>
+      </span>
+    </div>
+  </div>
+
+  <!-- Main grid: list + form -->
+  <div class="purch-grid" [class.purch-grid--split]="showForm">
+
+    <!-- Purchase List -->
+    <div class="purch-list-col">
+
+      <div class="dash-loading" *ngIf="loading">
+        <div class="dash-spinner"></div>
+        <span>Loading…</span>
+      </div>
+
+      <div class="purch-empty" *ngIf="!loading && purchases.length === 0">
+        <div class="purch-empty-icon">🧾</div>
+        <p>No expenses found for this period.</p>
+        <button class="btn btn-outline" (click)="openNew()">Add First Expense</button>
+      </div>
+
+      <div class="purch-card" *ngFor="let p of purchases" [class.purch-card--editing]="editingId === p.id">
+
+        <!-- Receipt thumbnail -->
+        <div class="purch-thumb-wrap">
+          <ng-container *ngIf="p.attachments.length; else noThumb">
+            <img [src]="imageBase + p.attachments[0].imagePath" class="purch-thumb purch-thumb--clickable"
+                 alt="receipt" (click)="viewAttachments(p.attachments)" title="Click to view all attachments" />
+            <span class="purch-thumb-count" *ngIf="p.attachments.length > 1">+{{ p.attachments.length - 1 }}</span>
+          </ng-container>
+          <ng-template #noThumb>
+            <div class="purch-thumb-placeholder">🧾</div>
+          </ng-template>
+        </div>
+
+        <!-- Content -->
+        <div class="purch-card-body">
+          <div class="purch-card-top">
+            <span class="purch-supplier">{{ p.supplier }}</span>
+            <span class="purch-amount">AED {{ p.totalAmount | number:'1.2-2' }}</span>
+          </div>
+          <div class="purch-card-meta">
+            <span class="purch-cat-badge" [style.background]="catColor(p.category) + '22'"
+                  [style.color]="catColor(p.category)" [style.borderColor]="catColor(p.category) + '55'">
+              {{ p.category }}
+            </span>
+            <span class="purch-date">{{ formatDate(p.date) }}</span>
+          </div>
+          <p class="purch-desc" *ngIf="p.description">{{ p.description }}</p>
+        </div>
+
+        <!-- Actions -->
+        <div class="purch-card-actions">
+          <button class="icon-btn" title="Edit" (click)="openEdit(p)">✏️</button>
+          <button class="icon-btn danger" title="Delete" (click)="delete(p.id)">🗑</button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Form Panel -->
+    <div class="purch-form-panel" *ngIf="showForm">
+      <div class="card">
+        <div class="purch-form-header">
+          <h3 class="card-title" style="margin-bottom:0">{{ editingId ? 'Edit Expense' : 'New Expense' }}</h3>
+          <button class="icon-btn" title="Close" (click)="cancelForm()">✕</button>
+        </div>
+
+        <div class="purch-form-body">
+
+          <label class="field-label">Date</label>
+          <input type="date" [(ngModel)]="form.date" />
+
+          <label class="field-label">Supplier / Vendor</label>
+          <input type="text" [(ngModel)]="form.supplier" placeholder="e.g. Al Madina Traders" />
+
+          <label class="field-label">Category</label>
+          <select [(ngModel)]="form.category">
+            <option *ngFor="let c of categories" [value]="c">{{ c }}</option>
+          </select>
+
+          <label class="field-label">Description <span class="field-optional">(optional)</span></label>
+          <textarea class="purch-textarea" [(ngModel)]="form.description"
+                    placeholder="Short note about this expense…" rows="3"></textarea>
+
+          <label class="field-label">Total Amount (AED)</label>
+          <div class="input-group compact">
+            <span class="input-prefix">AED</span>
+            <input type="number" [(ngModel)]="form.totalAmount" min="0" step="0.01" placeholder="0.00"
+                   style="margin-bottom:0" />
+          </div>
+
+          <label class="field-label" style="margin-top:4px">
+            Receipt Attachments <span class="field-optional">(optional, multiple allowed)</span>
+          </label>
+          <div class="purch-attach-grid" *ngIf="existingAttachments.length || imagePreviews.length">
+            <div class="dish-img-preview-wrap" *ngFor="let a of existingAttachments">
+              <img [src]="imageBase + a.imagePath" class="dish-img-preview purch-img-preview" alt="attachment" />
+              <button type="button" class="img-clear-btn" title="Remove" (click)="removeExistingAttachment(a)">✕</button>
+            </div>
+            <div class="dish-img-preview-wrap" *ngFor="let src of imagePreviews; let i = index">
+              <img [src]="src" class="dish-img-preview purch-img-preview" alt="new attachment preview" />
+              <span class="purch-attach-new-badge">new</span>
+              <button type="button" class="img-clear-btn" title="Remove" (click)="removeNewImage(i)">✕</button>
+            </div>
+          </div>
+          <div class="dish-img-upload">
+            <label class="img-upload-btn">
+              📷 Add Photos
+              <input type="file" accept="image/*" multiple style="display:none" (change)="onImageSelected($event)" />
+            </label>
+          </div>
+
+          <div class="btn-row">
+            <button class="btn btn-primary" style="flex:1" (click)="save()" [disabled]="saving || !form.supplier.trim() || form.totalAmount <= 0">
+              {{ saving ? 'Saving…' : (editingId ? 'Update' : 'Save Expense') }}
+            </button>
+            <button class="btn btn-ghost" (click)="cancelForm()">Cancel</button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div class="toast" *ngIf="message">{{ message }}</div>
+
+<!-- Attachment Gallery Viewer -->
+<div class="img-viewer-backdrop" *ngIf="viewingImage" (click)="closeViewer()">
+  <button class="img-viewer-close" (click)="closeViewer()">✕</button>
+
+  <button class="img-viewer-nav img-viewer-nav--prev" *ngIf="viewingAttachments.length > 1"
+          (click)="$event.stopPropagation(); prevImage()">‹</button>
+
+  <img class="img-viewer-img" [src]="viewingImage" alt="Receipt" (click)="$event.stopPropagation()" />
+
+  <button class="img-viewer-nav img-viewer-nav--next" *ngIf="viewingAttachments.length > 1"
+          (click)="$event.stopPropagation(); nextImage()">›</button>
+
+  <div class="img-viewer-counter" *ngIf="viewingAttachments.length > 1" (click)="$event.stopPropagation()">
+    {{ viewingIndex + 1 }} / {{ viewingAttachments.length }}
+  </div>
+
+  <div class="img-viewer-strip" *ngIf="viewingAttachments.length > 1" (click)="$event.stopPropagation()">
+    <img *ngFor="let a of viewingAttachments; let i = index"
+         [src]="imageBase + a.imagePath"
+         class="img-viewer-strip-thumb"
+         [class.img-viewer-strip-thumb--active]="i === viewingIndex"
+         (click)="viewingIndex = i" alt="thumbnail" />
+  </div>
+
+  <p class="img-viewer-hint">Click outside or press ESC to close · ← → to browse</p>
+</div>

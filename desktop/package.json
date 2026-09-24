@@ -1,0 +1,46 @@
+{
+  "name": "tehzeeb-pos-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tehzeeb POS desktop app",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "prepare-resources": "node scripts/build.js",
+    "dist": "node scripts/build.js && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "png-to-ico": "^2.1.8",
+    "sharp": "^0.35.3"
+  },
+  "build": {
+    "appId": "com.tehzeeb.pos",
+    "productName": "Tehzeeb POS",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/backend",
+        "to": "backend"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

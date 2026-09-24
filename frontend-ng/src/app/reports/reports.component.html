@@ -1,0 +1,244 @@
+<div class="page-container no-print">
+
+  <div class="page-header">
+    <div>
+      <h1>Reports</h1>
+      <p class="page-subtitle">Sales analysis &amp; item breakdown</p>
+    </div>
+  </div>
+
+  <!-- ── Z-Report Panel ───────────────────────────────── -->
+  <div class="card zr-card">
+    <div class="zr-header" (click)="zExpanded = !zExpanded">
+      <div class="zr-title">
+        <span class="zr-icon">📊</span>
+        <div>
+          <span class="zr-label">Z-Report</span>
+          <span class="zr-sub">Shift close report &amp; reset</span>
+        </div>
+      </div>
+      <div class="zr-status" *ngIf="!zLoading && zPreview">
+        <span class="zr-orders">{{ zPreview.totalOrders }} orders</span>
+        <span class="zr-revenue">AED {{ zPreview.grossSales | number:'1.2-2' }}</span>
+        <span class="zr-next">#Z{{ (zPreview.nextReportNumber ?? 1) | number:'3.0-0' }}</span>
+      </div>
+      <span class="zr-chevron">{{ zExpanded ? '▲' : '▼' }}</span>
+    </div>
+
+    <div class="zr-body" *ngIf="zExpanded">
+
+      <!-- Success / error message -->
+      <div class="zr-message" *ngIf="zMessage"
+           [class.zr-message--ok]="!zMessage.startsWith('⚠')"
+           [class.zr-message--warn]="zMessage.startsWith('⚠')">
+        {{ zMessage }}
+      </div>
+
+      <!-- Result after close -->
+      <ng-container *ngIf="zResult">
+        <div class="zr-result-header">
+          <span>Z-Report #{{ zResult.reportNumber }} closed at {{ uaeTime(zResult.generatedAt ?? null) }}</span>
+          <button class="btn btn-outline btn-sm" (click)="printZReport()">🖨 Print</button>
+        </div>
+        <div class="zr-shift-info">Shift was from {{ uaeTime(zResult.shiftStart) }}</div>
+        <ng-container *ngTemplateOutlet="zTable; context: { $implicit: zResult }"></ng-container>
+        <button class="btn btn-outline" style="margin-top:12px" (click)="zResult=null; loadZPreview()">
+          ↩ New Shift Preview
+        </button>
+      </ng-container>
+
+      <!-- Preview before close -->
+      <ng-container *ngIf="!zResult">
+        <div class="zr-shift-info" *ngIf="zPreview">
+          Shift from: <b>{{ uaeTime(zPreview.shiftStart) }}</b>
+        </div>
+        <div class="dash-loading" *ngIf="zLoading">
+          <div class="dash-spinner"></div><span>Loading shift data…</span>
+        </div>
+        <div class="zr-load-error" *ngIf="zLoadError && !zLoading">
+          ⚠ Could not load shift data — backend may be offline.
+          <button class="btn btn-outline btn-sm" (click)="loadZPreview()">Retry</button>
+        </div>
+        <ng-container *ngIf="zPreview && !zLoading">
+          <ng-container *ngTemplateOutlet="zTable; context: { $implicit: zPreview }"></ng-container>
+        </ng-container>
+        <button class="btn btn-danger" style="margin-top:16px"
+                (click)="closeShift()" [disabled]="zClosing">
+          {{ zClosing ? 'Closing shift…' : 'Close Shift &amp; Generate Z-Report' }}
+        </button>
+      </ng-container>
+
+    </div>
+  </div>
+
+  <!-- Shared Z-Report data table template -->
+  <ng-template #zTable let-z>
+    <div class="zr-stats">
+      <div class="zr-stat"><div class="zr-stat-label">Total Orders</div><div class="zr-stat-val">{{ z.totalOrders }}</div></div>
+      <div class="zr-stat"><div class="zr-stat-label">Gross Sales</div><div class="zr-stat-val">AED {{ z.grossSales | number:'1.2-2' }}</div></div>
+      <div class="zr-stat"><div class="zr-stat-label">Discounts</div><div class="zr-stat-val">− AED {{ z.discounts | number:'1.2-2' }}</div></div>
+      <div class="zr-stat"><div class="zr-stat-label">VAT (incl.)</div><div class="zr-stat-val">AED {{ z.taxTotal | number:'1.2-2' }}</div></div>
+      <div class="zr-stat zr-stat--net"><div class="zr-stat-label">Net Sales (ex-VAT)</div><div class="zr-stat-val">AED {{ z.netSales | number:'1.2-2' }}</div></div>
+    </div>
+    <div class="zr-items" *ngIf="z.topItems?.length">
+      <div class="zr-items-title">Top Items</div>
+      <table class="dish-table">
+        <thead><tr><th>Item</th><th>Qty</th><th>Revenue (AED)</th></tr></thead>
+        <tbody>
+          <tr *ngFor="let item of z.topItems; let i = index" [class.top-row]="i===0">
+            <td><span class="rank-badge" *ngIf="i<3">{{ i===0?'🥇':i===1?'🥈':'🥉' }}</span>{{ item.name }}</td>
+            <td class="num-cell">{{ item.qty }}</td>
+            <td class="num-cell">{{ item.revenue | number:'1.2-2' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </ng-template>
+
+  <!-- ── Filters ────────────────────────────────────── -->
+  <div class="card rpt-filter-card">
+
+    <!-- Presets -->
+    <div class="rpt-presets">
+      <button class="preset-btn" [class.active]="activePreset==='today'"     (click)="applyPreset('today')">Today</button>
+      <button class="preset-btn" [class.active]="activePreset==='yesterday'" (click)="applyPreset('yesterday')">Yesterday</button>
+      <button class="preset-btn" [class.active]="activePreset==='week'"      (click)="applyPreset('week')">Last 7 Days</button>
+      <button class="preset-btn" [class.active]="activePreset==='month'"     (click)="applyPreset('month')">This Month</button>
+    </div>
+
+    <!-- Custom range + item filter -->
+    <div class="rpt-filter-row">
+      <div class="rpt-field">
+        <label class="field-label">From</label>
+        <input type="date" [(ngModel)]="fromDate" (change)="onDateChange()" />
+      </div>
+      <div class="rpt-field">
+        <label class="field-label">To</label>
+        <input type="date" [(ngModel)]="toDate" (change)="onDateChange()" />
+      </div>
+      <div class="rpt-field rpt-field--wide">
+        <label class="field-label">Filter by Item</label>
+        <select [(ngModel)]="selectedDish" (change)="search()">
+          <option value="">All Items</option>
+          <option *ngFor="let d of dishes" [value]="d.id">{{ d.name }}</option>
+        </select>
+      </div>
+      <div class="rpt-field rpt-field--btn">
+        <label class="field-label">&nbsp;</label>
+        <button class="btn btn-primary" (click)="search()" [disabled]="loading">
+          {{ loading ? 'Loading…' : '🔍 Search' }}
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Loading ────────────────────────────────────── -->
+  <div class="dash-loading" *ngIf="loading">
+    <div class="dash-spinner"></div>
+    <span>Loading report…</span>
+  </div>
+
+  <!-- ── Results ────────────────────────────────────── -->
+  <ng-container *ngIf="result && !loading">
+
+    <!-- Summary cards -->
+    <div class="rpt-summary">
+      <div class="dash-stat-card">
+        <div class="stat-label">Total Orders</div>
+        <div class="stat-value">{{ result.summary.totalOrders }}</div>
+      </div>
+      <div class="dash-stat-card">
+        <div class="stat-label">Total Revenue</div>
+        <div class="stat-value">AED {{ result.summary.totalRevenue | number:'1.2-2' }}</div>
+      </div>
+      <div class="dash-stat-card">
+        <div class="stat-label">Avg Order Value</div>
+        <div class="stat-value">AED {{ result.summary.avgOrderValue | number:'1.2-2' }}</div>
+      </div>
+      <div class="dash-stat-card">
+        <div class="stat-label">Items Sold</div>
+        <div class="stat-value">{{ result.summary.totalItemsSold }}</div>
+      </div>
+    </div>
+
+    <!-- Empty -->
+    <div class="empty-state rpt-empty" *ngIf="result.summary.totalOrders === 0">
+      No orders found for the selected period.
+    </div>
+
+    <!-- Body: table + chart -->
+    <div class="rpt-body" *ngIf="result.summary.totalOrders > 0">
+
+      <!-- Item breakdown -->
+      <div class="card">
+        <h2 class="card-title">📦 Item Breakdown</h2>
+        <table class="dish-table" *ngIf="result.itemBreakdown.length">
+          <thead>
+            <tr><th>Item</th><th>Qty Sold</th><th>Revenue (AED)</th></tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let item of result.itemBreakdown; let i = index"
+                [class.top-row]="i === 0">
+              <td>
+                <span class="rank-badge" *ngIf="i < 3">{{ i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉' }}</span>
+                {{ item.dishName }}
+              </td>
+              <td class="num-cell">{{ item.qtySold }}</td>
+              <td class="num-cell">{{ item.revenue | number:'1.2-2' }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="empty-state" *ngIf="!result.itemBreakdown.length">No items in this range.</p>
+      </div>
+
+      <!-- Daily revenue chart -->
+      <div class="card">
+        <h2 class="card-title">📈 Daily Revenue</h2>
+        <div class="rpt-chart" *ngIf="result.dailySales.length">
+          <div class="rpt-chart-row" *ngFor="let d of result.dailySales">
+            <div class="rpt-chart-date">{{ d.date | slice:5 }}</div>
+            <div class="rpt-chart-track">
+              <div class="rpt-chart-fill" [style.width]="barPct(d.revenue)"></div>
+            </div>
+            <div class="rpt-chart-value">{{ d.revenue | number:'1.2-2' }}</div>
+            <div class="rpt-chart-orders">{{ d.orders }} order{{ d.orders !== 1 ? 's' : '' }}</div>
+          </div>
+        </div>
+        <p class="empty-state" *ngIf="!result.dailySales.length">No data to display.</p>
+      </div>
+
+    </div>
+
+  </ng-container>
+
+</div>
+
+<!-- ── Printable Z-Report (only shown when print-zreport class on body) ── -->
+<div class="zr-print-page" *ngIf="zResult">
+  <div class="zr-print-header">
+    <div class="zr-print-logo">🍽</div>
+    <h2>Tehzeeb POS &mdash; Z-Report #{{ zResult.reportNumber }}</h2>
+    <p>Generated: {{ uaeTime(zResult.generatedAt ?? null) }}</p>
+    <p>Shift from: {{ uaeTime(zResult.shiftStart) }}</p>
+  </div>
+  <table class="zr-print-table">
+    <tr><td>Total Orders</td>       <td class="zr-pt-val">{{ zResult.totalOrders }}</td></tr>
+    <tr><td>Gross Sales</td>        <td class="zr-pt-val">AED {{ zResult.grossSales | number:'1.2-2' }}</td></tr>
+    <tr><td>Discounts</td>          <td class="zr-pt-val">− AED {{ zResult.discounts | number:'1.2-2' }}</td></tr>
+    <tr><td>VAT Collected (incl.)</td><td class="zr-pt-val">AED {{ zResult.taxTotal | number:'1.2-2' }}</td></tr>
+    <tr class="zr-pt-total"><td><b>Net Sales (ex-VAT)</b></td><td class="zr-pt-val"><b>AED {{ zResult.netSales | number:'1.2-2' }}</b></td></tr>
+  </table>
+  <h3>Top Items</h3>
+  <table class="zr-print-table" *ngIf="zResult.topItems?.length">
+    <thead><tr><th>Item</th><th class="zr-pt-val">Qty</th><th class="zr-pt-val">Revenue</th></tr></thead>
+    <tbody>
+      <tr *ngFor="let item of zResult.topItems">
+        <td>{{ item.name }}</td>
+        <td class="zr-pt-val">{{ item.qty }}</td>
+        <td class="zr-pt-val">AED {{ item.revenue | number:'1.2-2' }}</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="zr-print-footer">Tehzeeb POS &mdash; Shift closed {{ uaeTime(zResult.generatedAt ?? null) }}</div>
+</div>

@@ -1,0 +1,58 @@
+<div class="login-page">
+  <div class="login-card">
+
+    <!-- Brand -->
+    <div class="login-brand">
+      <img src="/TL.png" alt="Tehzeeb Restaurant" class="login-logo">
+      <h1 class="login-title">Tehzeeb POS</h1>
+      <p class="login-subtitle">Restaurant &amp; Kitchen · Ajman, UAE</p>
+    </div>
+
+    <!-- Form -->
+    <form (ngSubmit)="submit()" autocomplete="on">
+
+      <label class="field-label">Username</label>
+      <input
+        type="text"
+        [(ngModel)]="username"
+        name="username"
+        placeholder="Enter username"
+        autocomplete="username"
+        [disabled]="loading"
+      />
+
+      <label class="field-label">Password</label>
+      <div class="pwd-wrap">
+        <input
+          [type]="showPwd ? 'text' : 'password'"
+          [(ngModel)]="password"
+          name="password"
+          placeholder="Enter password"
+          autocomplete="current-password"
+          [disabled]="loading"
+          class="pwd-input"
+        />
+        <button type="button" class="pwd-toggle" (click)="showPwd = !showPwd" tabindex="-1">
+          {{ showPwd ? '🙈' : '👁' }}
+        </button>
+      </div>
+
+      <!-- Error -->
+      <div class="login-error" *ngIf="error">
+        <span>⚠</span> {{ error }}
+      </div>
+
+      <button
+        type="submit"
+        class="btn btn-primary btn-lg login-btn"
+        [disabled]="loading || !username.trim() || !password"
+      >
+        <span *ngIf="!loading">Sign In</span>
+        <span *ngIf="loading" class="login-spinner"></span>
+        <span *ngIf="loading">Signing in…</span>
+      </button>
+
+    </form>
+
+  </div>
+</div>

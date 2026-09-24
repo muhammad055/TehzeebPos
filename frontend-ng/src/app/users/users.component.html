@@ -1,0 +1,104 @@
+<div class="page-container no-print">
+
+  <div class="page-header">
+    <div>
+      <h1>User Management</h1>
+      <p class="page-subtitle">Create accounts, change passwords, remove users</p>
+    </div>
+  </div>
+
+  <div class="um-layout">
+
+    <!-- ── Left: User List ───────────────────────────── -->
+    <div class="um-list-col">
+      <div class="card">
+        <h2 class="card-title">👥 System Users</h2>
+
+        <div class="dash-loading" *ngIf="loading">
+          <div class="dash-spinner"></div>
+        </div>
+
+        <div class="um-user-list" *ngIf="!loading">
+          <div class="um-user-row" *ngFor="let u of users">
+
+            <!-- User info -->
+            <div class="um-user-info">
+              <span class="um-avatar">{{ u.username[0].toUpperCase() }}</span>
+              <div>
+                <div class="um-username">
+                  {{ u.username }}
+                  <span class="um-self-tag" *ngIf="isSelf(u)">you</span>
+                </div>
+                <span class="nav-role-badge" [class.role-admin]="u.role === 'admin'">{{ u.role }}</span>
+              </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="um-actions" *ngIf="!isSelf(u)">
+              <button class="btn btn-outline btn-sm" (click)="startChangePassword(u.id)" *ngIf="changingId !== u.id">
+                🔑 Password
+              </button>
+              <button class="btn btn-danger btn-sm" (click)="confirmDelete(u.id)" *ngIf="deleteConfirmId !== u.id">
+                Delete
+              </button>
+            </div>
+
+            <!-- Change password inline form -->
+            <div class="um-inline-form" *ngIf="changingId === u.id">
+              <input type="password" [(ngModel)]="newPassword" placeholder="New password" name="np_{{u.id}}" />
+              <input type="password" [(ngModel)]="confirmNewPassword" placeholder="Confirm password" name="cnp_{{u.id}}" />
+              <div class="um-form-error" *ngIf="pwdError">{{ pwdError }}</div>
+              <div class="um-form-success" *ngIf="pwdSuccess">{{ pwdSuccess }}</div>
+              <div class="btn-row">
+                <button class="btn btn-primary btn-sm" (click)="submitChangePassword(u.id)">Save</button>
+                <button class="btn btn-ghost btn-sm" (click)="cancelChangePassword()">Cancel</button>
+              </div>
+            </div>
+
+            <!-- Delete confirm inline -->
+            <div class="um-inline-form um-delete-confirm" *ngIf="deleteConfirmId === u.id">
+              <p>Delete <strong>{{ u.username }}</strong>? This cannot be undone.</p>
+              <div class="btn-row">
+                <button class="btn btn-danger btn-sm" (click)="doDelete(u.id)">Yes, Delete</button>
+                <button class="btn btn-ghost btn-sm" (click)="cancelDelete()">Cancel</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Right: Create User ────────────────────────── -->
+    <div class="um-create-col">
+      <div class="card">
+        <h2 class="card-title">➕ Create New User</h2>
+
+        <label class="field-label">Username</label>
+        <input type="text" [(ngModel)]="newUser.username" placeholder="e.g. cashier2" name="new_uname" />
+
+        <label class="field-label">Password</label>
+        <input type="password" [(ngModel)]="newUser.password" placeholder="Min. 6 characters" name="new_pwd" />
+
+        <label class="field-label">Confirm Password</label>
+        <input type="password" [(ngModel)]="newUser.confirmPassword" placeholder="Repeat password" name="new_cpwd" />
+
+        <label class="field-label">Role</label>
+        <select [(ngModel)]="newUser.role" name="new_role" class="um-select">
+          <option value="cashier">Cashier</option>
+          <option value="admin">Admin</option>
+        </select>
+
+        <div class="um-form-error" *ngIf="createError">{{ createError }}</div>
+        <div class="um-form-success" *ngIf="createSuccess">{{ createSuccess }}</div>
+
+        <button class="btn btn-primary btn-lg" style="margin-top:8px"
+          [disabled]="creating"
+          (click)="submitCreate()">
+          {{ creating ? 'Creating…' : 'Create User' }}
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>

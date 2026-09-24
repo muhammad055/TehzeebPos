@@ -1,0 +1,267 @@
+<!-- ═══════════════════════════════════════════════════
+     SCREEN VIEW (hidden on print)
+═══════════════════════════════════════════════════ -->
+<div class="pos-layout no-print">
+
+  <!-- LEFT: Dish Search + Grid -->
+  <div class="dish-panel">
+    <div class="search-wrap">
+      <span class="search-icon">🔍</span>
+      <input
+        type="text"
+        [(ngModel)]="search"
+        (ngModelChange)="filterDishes()"
+        placeholder="Search dishes..."
+        class="search-input"
+      />
+    </div>
+
+    <div class="dish-grid">
+      <button
+        class="dish-card"
+        *ngFor="let d of filtered"
+        (click)="addToCart(d)"
+      >
+        <div class="dish-card-img" *ngIf="d.imagePath">
+          <img [src]="d.imagePath" [alt]="d.name" />
+        </div>
+        <div class="dish-card-no-img" *ngIf="!d.imagePath">🍽</div>
+        <span class="dish-card-name i18n-dish-name" dir="auto">{{ lang.displayName(d.name, d.printName) }}</span>
+        <span class="dish-card-price">AED {{ d.price | number:'1.2-2' }}</span>
+      </button>
+      <p class="empty-state" *ngIf="!filtered.length">No dishes found.</p>
+    </div>
+  </div>
+
+  <!-- RIGHT: Cart + Totals -->
+  <div class="cart-panel">
+    <div class="cart-header">
+      <h2>Active Order</h2>
+      <button class="btn btn-ghost btn-sm" (click)="clearCart()" *ngIf="cart.length">
+        🗑 Clear
+      </button>
+    </div>
+
+    <!-- Cart Items -->
+    <div class="cart-items" *ngIf="cart.length; else emptyCart">
+      <div class="cart-item" *ngFor="let item of cart">
+        <div class="cart-item-top">
+          <img *ngIf="item.imagePath" [src]="item.imagePath" [alt]="item.dishName" class="cart-item-thumb" />
+          <div class="portion-ctrl portion-ctrl--lg" *ngIf="item.tier2Price">
+            <button class="portion-btn" [class.portion-btn--active]="item.portionTier === 'tier1'"
+                    [title]="tierLabels(item).tier1" (click)="setTier(item, 'tier1')">{{ tierLabels(item).btn1 }}</button>
+            <button class="portion-btn" [class.portion-btn--active]="item.portionTier === 'tier2'"
+                    [title]="tierLabels(item).tier2" (click)="setTier(item, 'tier2')">{{ tierLabels(item).btn2 }}</button>
+            <button class="portion-btn" *ngIf="item.tier3Price" [class.portion-btn--active]="item.portionTier === 'tier3'"
+                    [title]="tierLabels(item).tier3" (click)="setTier(item, 'tier3')">{{ tierLabels(item).btn3 }}</button>
+          </div>
+          <span class="cart-item-name i18n-dish-name" dir="auto">{{ lang.displayName(item.dishName, item.printName) }}{{ portionSuffix(item) }}</span>
+          <button class="remove-btn" (click)="removeItem(item)">✕</button>
+        </div>
+        <div class="cart-item-controls">
+          <div class="qty-ctrl">
+            <button (click)="changeQty(item, -1)">−</button>
+            <span>{{ item.quantity }}</span>
+            <button (click)="changeQty(item, +1)">+</button>
+          </div>
+          <div class="price-override">
+            <label>Unit Price</label>
+            <div class="input-group compact">
+              <span class="input-prefix">AED</span>
+              <input
+                type="number"
+                [(ngModel)]="item.unitPrice"
+                (ngModelChange)="recalcItem(item)"
+                min="0"
+                step="0.5"
+              />
+            </div>
+          </div>
+          <div class="line-total">
+            AED {{ item.lineTotal | number:'1.2-2' }}
+          </div>
+        </div>
+      </div>
+    </div>
+    <ng-template #emptyCart>
+      <div class="empty-cart">Tap a dish to add it to the order</div>
+    </ng-template>
+
+    <!-- Totals Panel -->
+    <div class="totals-panel" *ngIf="cart.length">
+      <div class="totals-controls">
+        <div class="control-row">
+          <label>Discount %</label>
+          <div class="input-group compact">
+            <input type="number" [(ngModel)]="globalDiscount" min="0" max="100" step="1" />
+            <span class="input-suffix">%</span>
+          </div>
+        </div>
+        <div class="control-row">
+          <label>
+            <input type="checkbox" [(ngModel)]="applyTax" />
+            Apply Tax
+          </label>
+          <div class="input-group compact" *ngIf="applyTax">
+            <input
+              type="number"
+              [(ngModel)]="customTaxRate"
+              [placeholder]="defaultTaxRate + ' (default)'"
+              min="0" max="100" step="0.5"
+            />
+            <span class="input-suffix">%</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="totals-breakdown">
+        <div class="total-row"><span>Subtotal</span><span>AED {{ subTotal | number:'1.2-2' }}</span></div>
+        <div class="total-row discount" *ngIf="discountAmount > 0">
+          <span>Discount ({{ globalDiscount }}%)</span>
+          <span>− AED {{ discountAmount | number:'1.2-2' }}</span>
+        </div>
+        <div class="total-row grand">
+          <span>Total</span>
+          <span>AED {{ grandTotal | number:'1.2-2' }}</span>
+        </div>
+        <div class="total-row tax-note" *ngIf="applyTax && taxAmount > 0">
+          <span>incl. VAT ({{ effectiveTaxRate }}%)</span>
+          <span>AED {{ taxAmount | number:'1.2-2' }}</span>
+        </div>
+      </div>
+
+      <div class="cart-actions">
+        <button class="btn btn-primary btn-lg" (click)="openPayModal()"
+                [disabled]="saving || orderSaved || !cart.length">
+          {{ orderSaved ? '✓ Order Saved' : saving ? 'Saving…' : 'Charge / Pay' }}
+        </button>
+        <div class="print-btn-row" *ngIf="orderSaved">
+          <button class="btn btn-outline btn-lg" (click)="printReceipt()">
+            🖨 Receipt
+          </button>
+          <button class="btn btn-outline btn-lg" (click)="printKitchenToken()" *ngIf="kitchenCopies > 0">
+            👨‍🍳 Kitchen
+          </button>
+        </div>
+        <p class="print-status" *ngIf="printStatus">{{ printStatus }}</p>
+      </div>
+
+      <!-- Payment method badge after order saved -->
+      <div class="pay-method-badge" *ngIf="orderSaved && receiptPayMethod">
+        <span *ngIf="receiptPayMethod === 'cash'">💵 Cash</span>
+        <span *ngIf="receiptPayMethod === 'card'">💳 Card</span>
+        <span class="pay-method-change" *ngIf="receiptPayMethod === 'cash' && receiptChange > 0">
+          Change: AED {{ receiptChange | number:'1.2-2' }}
+        </span>
+      </div>
+
+      <div class="token-badge" *ngIf="lastTokenNumber">
+        <span class="token-label">Token</span>
+        <span class="token-num">#{{ tokenDisplay }}</span>
+      </div>
+      <p class="order-ref" *ngIf="lastOrderId">Order #{{ lastOrderId }}</p>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════
+     PAYMENT MODAL
+═══════════════════════════════════════════════════ -->
+<div class="pay-backdrop" *ngIf="payModalOpen" (click)="closePayModal()">
+  <div class="pay-modal" (click)="$event.stopPropagation()">
+
+    <!-- Header -->
+    <div class="pay-modal-header">
+      <span class="pay-modal-title">Payment</span>
+      <button class="pay-modal-close" (click)="closePayModal()">&#x2715;</button>
+    </div>
+
+    <!-- Total due -->
+    <div class="pay-total-row">
+      <span class="pay-total-label">Total Due</span>
+      <span class="pay-total-amount">AED {{ grandTotal | number:'1.2-2' }}</span>
+    </div>
+
+    <!-- Step 1: Choose method -->
+    <div class="pay-methods" *ngIf="!payMethod">
+      <button class="pay-method-btn" (click)="selectMethod('cash')">
+        <svg class="pay-icon" viewBox="0 0 80 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="2" width="76" height="46" rx="6" stroke="currentColor" stroke-width="3"/>
+          <circle cx="40" cy="25" r="10" stroke="currentColor" stroke-width="2.5"/>
+          <ellipse cx="10" cy="25" rx="5" ry="8" stroke="currentColor" stroke-width="2"/>
+          <ellipse cx="70" cy="25" rx="5" ry="8" stroke="currentColor" stroke-width="2"/>
+          <line x1="2"  y1="14" x2="22" y2="14" stroke="currentColor" stroke-width="1.5"/>
+          <line x1="2"  y1="36" x2="22" y2="36" stroke="currentColor" stroke-width="1.5"/>
+          <line x1="58" y1="14" x2="78" y2="14" stroke="currentColor" stroke-width="1.5"/>
+          <line x1="58" y1="36" x2="78" y2="36" stroke="currentColor" stroke-width="1.5"/>
+        </svg>
+        <span class="pay-method-label">Cash</span>
+      </button>
+
+      <button class="pay-method-btn" (click)="selectMethod('card')">
+        <svg class="pay-icon" viewBox="0 0 80 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="2" width="76" height="46" rx="6" stroke="currentColor" stroke-width="3"/>
+          <rect x="2" y="14" width="76" height="11" fill="currentColor" opacity="0.25"/>
+          <rect x="10" y="31" width="18" height="11" rx="2" stroke="currentColor" stroke-width="2"/>
+          <line x1="36" y1="32" x2="70" y2="32" stroke="currentColor" stroke-width="2"/>
+          <line x1="36" y1="37" x2="70" y2="37" stroke="currentColor" stroke-width="2"/>
+          <line x1="36" y1="42" x2="55" y2="42" stroke="currentColor" stroke-width="2"/>
+        </svg>
+        <span class="pay-method-label">Card</span>
+      </button>
+    </div>
+
+    <!-- Step 2 Cash: amount input -->
+    <ng-container *ngIf="payMethod === 'cash'">
+      <div class="pay-cash-section">
+        <label class="pay-input-label">Cash Received (AED)</label>
+        <div class="pay-input-wrap">
+          <input class="pay-cash-input" type="number" [(ngModel)]="cashTendered"
+                 min="0" step="1" placeholder="" />
+          <button class="pay-input-clear" *ngIf="cashTendered !== null"
+                  (click)="cashTendered = null" type="button">&#x2715;</button>
+        </div>
+
+        <div class="pay-quick-row">
+          <button class="pay-quick-btn" *ngFor="let a of quickCashAmounts"
+                  (click)="setQuickCash(a)"
+                  [class.pay-quick-btn--active]="cashTendered === a">
+            {{ a }}
+          </button>
+        </div>
+
+        <div class="pay-change-row" [class.pay-change-row--ready]="cashTendered !== null && cashTendered >= grandTotal">
+          <span>Change</span>
+          <span class="pay-change-amount">AED {{ changeAmount | number:'1.2-2' }}</span>
+        </div>
+      </div>
+    </ng-container>
+
+    <!-- Step 2 Card: info -->
+    <div class="pay-card-info" *ngIf="payMethod === 'card'">
+      <svg class="pay-card-big-icon" viewBox="0 0 80 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2" y="2" width="76" height="46" rx="6" stroke="currentColor" stroke-width="3"/>
+        <rect x="2" y="14" width="76" height="11" fill="currentColor" opacity="0.25"/>
+        <rect x="10" y="31" width="18" height="11" rx="2" stroke="currentColor" stroke-width="2"/>
+        <line x1="36" y1="32" x2="70" y2="32" stroke="currentColor" stroke-width="2"/>
+        <line x1="36" y1="37" x2="70" y2="37" stroke="currentColor" stroke-width="2"/>
+        <line x1="36" y1="42" x2="55" y2="42" stroke="currentColor" stroke-width="2"/>
+      </svg>
+      <p class="pay-card-hint">Process payment on card terminal, then confirm.</p>
+    </div>
+
+    <!-- Action buttons -->
+    <div class="pay-actions" *ngIf="payMethod">
+      <button class="btn btn-ghost pay-back-btn" (click)="payMethod = null; cashTendered = null">
+        &#8592; Back
+      </button>
+      <button class="pay-confirm-btn"
+              (click)="confirmPayment()"
+              [disabled]="payMethod === 'cash' && (cashTendered === null || cashTendered < grandTotal)">
+        &#x2713; Confirm &amp; Place Order
+      </button>
+    </div>
+
+  </div>
+</div>

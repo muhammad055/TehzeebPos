@@ -1,0 +1,209 @@
+<div class="page-container no-print">
+  <div class="page-header">
+    <h1>Menu Setup</h1>
+    <p class="page-subtitle">Manage dishes and pricing</p>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" *ngIf="message">{{ message }}</div>
+
+  <div class="admin-grid">
+    <!-- Left: Settings Tabs + Form -->
+    <div class="admin-sidebar">
+
+      <!-- Settings tab strip -->
+      <div class="settings-tabs">
+        <button class="settings-tab-btn" [class.active]="activeSettingTab === 'tax'"
+                (click)="toggleSettingTab('tax')">
+          % Tax
+        </button>
+        <button class="settings-tab-btn" [class.active]="activeSettingTab === 'printer'"
+                (click)="toggleSettingTab('printer')">
+          🖨 Printer
+        </button>
+        <button class="settings-tab-btn" [class.active]="activeSettingTab === 'email'"
+                (click)="toggleSettingTab('email')">
+          📧 Email
+        </button>
+      </div>
+
+      <!-- Tax Rate panel -->
+      <div class="card settings-panel" *ngIf="activeSettingTab === 'tax'">
+        <h2 class="card-title">Default Tax Rate</h2>
+        <div class="input-group">
+          <input type="number" [(ngModel)]="defaultTaxRate" min="0" max="100" step="0.5" />
+          <span class="input-suffix">%</span>
+        </div>
+        <button class="btn btn-outline" (click)="saveTaxRate()">Save Tax Rate</button>
+      </div>
+
+      <!-- Printer panel -->
+      <div class="card settings-panel" *ngIf="activeSettingTab === 'printer'">
+        <h2 class="card-title">🖨 Printer Settings</h2>
+
+        <label class="field-label">Printer Name</label>
+        <p class="field-hint">Exact name as shown in Windows Settings &rarr; Printers &amp; scanners (e.g. "POS-80 Printer")</p>
+        <div class="input-group">
+          <input type="text" [(ngModel)]="printerName" placeholder="e.g. POS-80 Printer" />
+        </div>
+
+        <label class="field-label" style="margin-top:12px">Customer Receipt Copies</label>
+        <div class="input-group">
+          <input type="number" [(ngModel)]="customerCopies" min="1" max="5" step="1" />
+          <span class="input-suffix">copies</span>
+        </div>
+
+        <label class="field-label" style="margin-top:12px">Kitchen Token Copies</label>
+        <p class="field-hint">Set to 0 to hide the Kitchen print button</p>
+        <div class="input-group">
+          <input type="number" [(ngModel)]="kitchenCopies" min="0" max="5" step="1" />
+          <span class="input-suffix">copies</span>
+        </div>
+
+        <button class="btn btn-outline" style="margin-top:14px" (click)="savePrinterSettings()">
+          Save Printer Settings
+        </button>
+      </div>
+
+      <!-- Email panel -->
+      <div class="card settings-panel" *ngIf="activeSettingTab === 'email'">
+        <h2 class="card-title">📧 Email Settings</h2>
+        <p class="field-hint">Used to email Z-Reports on shift close.</p>
+
+        <label class="field-label">SMTP Host</label>
+        <input type="text" [(ngModel)]="email.smtpHost" placeholder="smtp.gmail.com" />
+
+        <label class="field-label" style="margin-top:10px">SMTP Port</label>
+        <input type="number" [(ngModel)]="email.smtpPort" placeholder="587" />
+
+        <label class="field-label" style="margin-top:10px">Username (Email)</label>
+        <input type="email" [(ngModel)]="email.smtpUsername" placeholder="yourname@gmail.com" />
+
+        <label class="field-label" style="margin-top:10px">Password / App Password</label>
+        <input type="password" [(ngModel)]="email.smtpPassword" placeholder="••••••••••••" />
+
+        <label class="field-label" style="margin-top:10px">Send Report To</label>
+        <input type="email" [(ngModel)]="email.reportToEmail" placeholder="manager@example.com" />
+
+        <button class="btn btn-outline" style="margin-top:14px" (click)="saveEmailSettings()">
+          Save Email Settings
+        </button>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">{{ editingId ? 'Edit Dish' : 'Add New Dish' }}</h2>
+
+        <label class="field-label">Name</label>
+        <input type="text" class="i18n-dish-name" dir="auto" [(ngModel)]="form.name" placeholder="e.g. Chicken Biryani" />
+
+        <label class="field-label">Print Name <span class="field-optional">(optional — used on receipts/kitchen tickets if Name isn't in English)</span></label>
+        <input type="text" [(ngModel)]="form.printName" placeholder="Leave blank to print Name as-is" />
+
+        <label class="field-label">{{ form.doublePrice ? formTierLabels.tier1 + ' Price (AED)' : 'Base Price (AED)' }}</label>
+        <input type="number" [(ngModel)]="form.price" min="0" step="0.5" />
+
+        <label class="field-label">{{ formTierLabels.tier2 }} Price <span class="field-optional">(optional — for dishes with multiple portion prices, e.g. Biryani or Karahi)</span></label>
+        <input type="number" [(ngModel)]="form.doublePrice" min="0" step="0.5" placeholder="Leave blank if this dish has only one price" />
+
+        <label class="field-label">Pricing Style</label>
+        <div class="pricing-scheme-row">
+          <label class="pricing-scheme-opt">
+            <input type="radio" name="pricingScheme" value="SingleDouble" [(ngModel)]="form.pricingScheme" />
+            Single / Double
+          </label>
+          <label class="pricing-scheme-opt">
+            <input type="radio" name="pricingScheme" value="QuarterHalfFull" [(ngModel)]="form.pricingScheme" />
+            Quarter / Half / Full
+          </label>
+        </div>
+
+        <ng-container *ngIf="form.pricingScheme === 'QuarterHalfFull'">
+          <label class="field-label">Full Price <span class="field-optional">(optional)</span></label>
+          <input type="number" [(ngModel)]="form.thirdPrice" min="0" step="0.5" placeholder="e.g. 45" />
+        </ng-container>
+
+        <label class="field-label">Tax Rate (%)</label>
+        <input type="number" [(ngModel)]="form.taxRate" min="0" max="100" step="0.5" />
+
+        <label class="field-label">Photo <span class="field-optional">(optional)</span></label>
+        <div class="dish-img-upload">
+          <div class="dish-img-preview-wrap" *ngIf="imagePreview">
+            <img [src]="imagePreview" alt="Preview" class="dish-img-preview" />
+            <button type="button" class="img-clear-btn" (click)="clearImage()" title="Remove">✕</button>
+          </div>
+          <label class="img-upload-btn" [class.img-upload-btn--small]="imagePreview">
+            <input type="file" accept="image/*" (change)="onImageSelected($event)" hidden />
+            {{ imagePreview ? '🔄 Change' : '📷 Choose Photo' }}
+          </label>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" (click)="saveDish()" [disabled]="saving">
+            {{ editingId ? 'Update' : 'Add Dish' }}
+          </button>
+          <button class="btn btn-ghost" *ngIf="editingId" (click)="cancelEdit()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Dish Table -->
+    <div class="dish-table-wrap card">
+      <div class="dish-table-header">
+        <h2 class="card-title">All Dishes ({{ filteredDishes.length }})</h2>
+        <label class="master-switch-wrap" *ngIf="dishes.length" [title]="allDishesActive ? 'Click to disable all dishes' : 'Click to enable all dishes'">
+          <span class="master-switch-label">{{ allDishesActive ? 'All Active' : 'All Off' }}</span>
+          <span class="switch" [class.switch--on]="allDishesActive" (click)="toggleAllDishes()">
+            <span class="switch-knob"></span>
+          </span>
+        </label>
+        <div class="dish-search-wrap">
+          <input class="dish-search-input" type="text" [(ngModel)]="dishSearch"
+                 placeholder="Search dishes…" />
+          <button class="dish-search-clear" *ngIf="dishSearch" (click)="dishSearch = ''">&#x2715;</button>
+        </div>
+      </div>
+      <table class="dish-table" *ngIf="filteredDishes.length; else empty">
+        <thead>
+          <tr>
+            <th>Photo</th>
+            <th>Name</th>
+            <th>Price</th>
+            <th>Tax %</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let d of filteredDishes"
+              [class.editing-row]="editingId === d.id"
+              [class.dish-row--inactive]="!d.isActive">
+            <td class="dish-thumb-cell">
+              <img *ngIf="d.imagePath" [src]="d.imagePath" class="dish-thumb" [alt]="d.name" />
+              <span *ngIf="!d.imagePath" class="dish-thumb-placeholder">🍽</span>
+            </td>
+            <td class="i18n-dish-name" dir="auto">{{ lang.displayName(d.name, d.printName) }}</td>
+            <td>
+              AED {{ d.price | number:'1.2-2' }}
+              <span class="dish-double-price" *ngIf="d.doublePrice">&nbsp;/ {{ d.doublePrice | number:'1.2-2' }}</span>
+              <span class="dish-double-price" *ngIf="d.thirdPrice">&nbsp;/ {{ d.thirdPrice | number:'1.2-2' }}</span>
+            </td>
+            <td>{{ d.taxRate }}%</td>
+            <td class="action-cell">
+              <button class="dish-toggle-btn"
+                      [class.dish-toggle-btn--on]="d.isActive"
+                      [class.dish-toggle-btn--off]="!d.isActive"
+                      (click)="toggleDish(d)"
+                      [title]="d.isActive ? 'Click to disable' : 'Click to enable'">
+                {{ d.isActive ? 'Active' : 'Off' }}
+              </button>
+              <button class="icon-btn" (click)="startEdit(d)" title="Edit">✏️</button>
+              <button class="icon-btn danger" (click)="deleteDish(d.id)" title="Delete">🗑</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <ng-template #empty>
+        <p class="empty-state">No dishes yet. Add your first dish →</p>
+      </ng-template>
+    </div>
+  </div>
+</div>

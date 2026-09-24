@@ -1,0 +1,122 @@
+<div class="page-container no-print">
+
+  <div class="page-header">
+    <h1>Order History</h1>
+    <p class="page-subtitle">Browse past orders by date</p>
+  </div>
+
+  <!-- ── Date Filter ─────────────────────────────────── -->
+  <div class="oh-filter card">
+    <div class="oh-filter-row">
+      <button class="btn btn-ghost btn-sm" (click)="shiftDate(-1)" title="Previous">&#8592;</button>
+      <div class="oh-range-group">
+        <span class="oh-range-label">From</span>
+        <input type="date" [(ngModel)]="selectedDate" class="oh-date-input" />
+        <span class="oh-range-sep">→</span>
+        <span class="oh-range-label">To</span>
+        <input type="date" [(ngModel)]="toDate" class="oh-date-input" />
+      </div>
+      <button class="btn btn-ghost btn-sm" (click)="shiftDate(1)" title="Next">&#8594;</button>
+      <button class="btn btn-primary btn-sm" (click)="fetchOrders()">Search</button>
+      <button class="btn btn-outline btn-sm" (click)="goToday()">Today</button>
+    </div>
+    <div class="oh-date-label" *ngIf="selectedDate">{{ formatSelectedDate() }}</div>
+  </div>
+
+  <!-- ── Summary Bar ─────────────────────────────────── -->
+  <div class="oh-summary" *ngIf="!loading">
+    <div class="oh-summary-left">
+      <span class="oh-count">{{ orders.length }}</span>
+      <span class="oh-count-label">order{{ orders.length !== 1 ? 's' : '' }} found</span>
+    </div>
+    <div class="oh-summary-right" *ngIf="orders.length">
+      <span class="oh-summary-label">Day Total</span>
+      <span class="oh-summary-value">AED {{ dayTotal | number:'1.2-2' }}</span>
+      <button class="btn btn-outline btn-sm" (click)="printSummary()" title="Download / Print PDF summary">
+        📄 PDF
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Loading ────────────────────────────────────── -->
+  <div class="dash-loading" *ngIf="loading">
+    <div class="dash-spinner"></div>
+    <p>Loading orders…</p>
+  </div>
+
+  <!-- ── Orders List ────────────────────────────────── -->
+  <div class="oh-list" *ngIf="!loading">
+
+    <div class="oh-card" [class.oh-card--cancelled]="order.isCancelled" *ngFor="let order of orders">
+      <!-- Header row (clickable) -->
+      <div class="oh-card-header" (click)="toggleExpand(order.id)">
+        <div class="oh-card-left">
+          <span class="oh-order-num">#{{ order.id }}</span>
+          <span class="oh-badge">{{ formatTime(order.orderDate) }}</span>
+          <span class="oh-meta">{{ order.items.length }} item{{ order.items.length !== 1 ? 's' : '' }}</span>
+          <span class="oh-cancelled-badge" *ngIf="order.isCancelled">CANCELLED</span>
+        </div>
+        <div class="oh-card-right">
+          <div class="oh-totals-mini">
+            <span *ngIf="order.discount > 0" class="oh-discount-badge">-AED {{ order.discount | number:'1.2-2' }}</span>
+            <span *ngIf="order.taxTotal > 0" class="oh-tax-badge">+tax</span>
+          </div>
+          <span class="oh-grand">AED {{ order.grandTotal | number:'1.2-2' }}</span>
+          <span class="oh-chevron">{{ expandedId === order.id ? '▲' : '▼' }}</span>
+        </div>
+      </div>
+
+      <!-- Expanded detail -->
+      <div class="oh-detail" *ngIf="expandedId === order.id">
+        <table class="oh-items-table">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th class="num-col">Qty</th>
+              <th class="num-col">Unit Price</th>
+              <th class="num-col">Line Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let item of order.items">
+              <td>{{ item.dishName }}</td>
+              <td class="num-col">{{ item.quantity }}</td>
+              <td class="num-col mono">AED {{ item.unitPrice | number:'1.2-2' }}</td>
+              <td class="num-col mono">AED {{ item.lineTotal | number:'1.2-2' }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="oh-breakdown">
+          <div class="oh-row"><span>Subtotal</span><span class="mono">AED {{ order.subTotal | number:'1.2-2' }}</span></div>
+          <div class="oh-row success-row" *ngIf="order.discount > 0">
+            <span>Discount</span>
+            <span class="mono">− AED {{ order.discount | number:'1.2-2' }}</span>
+          </div>
+          <div class="oh-row" *ngIf="order.taxTotal > 0">
+            <span>Tax</span>
+            <span class="mono">AED {{ order.taxTotal | number:'1.2-2' }}</span>
+          </div>
+          <div class="oh-row oh-row--grand">
+            <span>Grand Total</span>
+            <span class="mono">AED {{ order.grandTotal | number:'1.2-2' }}</span>
+          </div>
+        </div>
+
+        <div class="oh-cancel-note" *ngIf="order.isCancelled">
+          Cancelled{{ order.cancelledAt ? ' at ' + formatTime(order.cancelledAt) : '' }}<span *ngIf="order.cancelReason"> — {{ order.cancelReason }}</span>
+        </div>
+        <button class="btn btn-ghost btn-sm oh-cancel-btn" *ngIf="!order.isCancelled" (click)="cancelOrder(order)">
+          ✕ Cancel Order
+        </button>
+      </div>
+    </div>
+
+    <!-- Empty state -->
+    <div class="oh-empty" *ngIf="!orders.length">
+      <div class="oh-empty-icon">🗒</div>
+      <p>No orders found for this date.</p>
+    </div>
+
+  </div>
+</div>

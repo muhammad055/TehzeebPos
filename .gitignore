@@ -1,0 +1,26 @@
+# Backend (.NET)
+backend/bin/
+backend/obj/
+backend/app.db
+backend/app.db-journal
+backend/app.db-shm
+backend/app.db-wal
+backend/wwwroot/uploads/
+
+# Frontend (Angular)
+frontend-ng/node_modules/
+frontend-ng/dist/
+frontend-ng/.angular/
+
+# Desktop (Electron)
+desktop/node_modules/
+desktop/release/
+desktop/build/
+desktop/resources/
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# OS junk
+Thumbs.db
+.DS_Store
