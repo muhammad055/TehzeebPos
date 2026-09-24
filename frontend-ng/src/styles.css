@@ -546,6 +546,7 @@ input:focus {
   letter-spacing: 0.5px;
   color: var(--text-muted);
   border-bottom: 1px solid var(--border);
+  white-space: nowrap;
 }
 
 .dish-table td {
@@ -558,6 +559,18 @@ input:focus {
 
 .dish-table td:nth-child(2),
 .dish-table td:nth-child(3) { font-family: var(--font-num); }
+
+/* Without explicit widths, the browser's table auto-layout hands leftover
+   space to Price/Tax/Actions somewhat arbitrarily, leaving big empty gutters
+   in those columns (visible as blank space when a row is hovered/selected).
+   Shrink those to their content and let the Name column absorb the slack. */
+.dish-table td:nth-child(3),
+.dish-table td:nth-child(4),
+.dish-table td.action-cell {
+  width: 1%;
+  white-space: nowrap;
+}
+.dish-table td.i18n-dish-name { width: 100%; }
 
 .dish-double-price { color: var(--text-muted); font-size: 11px; }
 
