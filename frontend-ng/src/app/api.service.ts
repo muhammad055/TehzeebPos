@@ -1,5 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
+import { environment } from '../environments/environment';
 
 export type PricingScheme = 'SingleDouble' | 'QuarterHalfFull';
 
@@ -183,7 +184,7 @@ export interface Order {
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private http = inject(HttpClient);
-  private base = 'http://localhost:5050/api';
+  private base = environment.apiBase;
 
   // Settings
   getSettings() { return this.http.get<Setting[]>(`${this.base}/settings`); }
@@ -221,6 +222,11 @@ export class ApiService {
   printKitchenToken(p: PrintKitchenPayload) {
     return this.http.post<{ printed: boolean }>(`${this.base}/print/kitchen-token`, p);
   }
+
+  // Print Agent (cloud deployments only — see backend/PrintDispatch.cs)
+  getPrintAgentKey() { return this.http.get<{ key: string }>(`${this.base}/printer-agent/key`); }
+  regeneratePrintAgentKey() { return this.http.post<{ key: string }>(`${this.base}/printer-agent/regenerate-key`, {}); }
+  getPrintAgentStatus() { return this.http.get<{ connected: boolean }>(`${this.base}/printer-agent/status`); }
 
   // Stats
   getStats() { return this.http.get<Stats>(`${this.base}/stats`); }

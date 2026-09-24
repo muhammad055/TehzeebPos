@@ -19,6 +19,8 @@ export class AdminComponent implements OnInit {
   printerName     = '';
   customerCopies  = 1;
   kitchenCopies   = 1;
+  printAgentKey: string | null = null;
+  printAgentConnected = false;
 
   email = { smtpHost: '', smtpPort: '587', smtpUsername: '', smtpPassword: '', reportToEmail: '' };
 
@@ -55,7 +57,20 @@ export class AdminComponent implements OnInit {
   imageFile: File | null = null;
   imagePreview: string | null = null;
 
-  ngOnInit() { this.loadAll(); }
+  ngOnInit() { this.loadAll(); this.loadPrintAgentInfo(); }
+
+  loadPrintAgentInfo() {
+    this.api.getPrintAgentKey().subscribe(r => this.printAgentKey = r.key);
+    this.api.getPrintAgentStatus().subscribe(r => this.printAgentConnected = r.connected);
+  }
+
+  regeneratePrintAgentKey() {
+    if (!confirm('Regenerate the print agent key? Any Print Agent already running at the restaurant will need to be reconfigured with the new key before it can print again.')) return;
+    this.api.regeneratePrintAgentKey().subscribe(r => {
+      this.printAgentKey = r.key;
+      this.flash('Print agent key regenerated.');
+    });
+  }
 
   loadAll() {
     this.api.getDishes().subscribe(d => this.dishes = d);

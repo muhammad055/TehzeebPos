@@ -1,12 +1,37 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 
+// Npgsql maps DateTime to "timestamp without time zone" regardless of Kind by
+// default as of Npgsql 6+, EXCEPT it throws when a Utc-Kind DateTime (e.g.
+// DateTime.UtcNow, used throughout this file's UAE-offset date math) is
+// written to that column type. The app's existing date arithmetic mixes
+// Utc/Unspecified Kind DateTimes freely and correctness doesn't depend on
+// Kind (everything is manual UTC+4 offset math against naive values), so we
+// opt back into the lenient legacy behavior rather than rewrite every
+// DateTime construction across the file.
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 var builder = WebApplication.CreateBuilder(args);
 
+var jwtSecret   = builder.Configuration["Jwt:Secret"]
+    ?? throw new InvalidOperationException("Jwt:Secret is not configured (see appsettings.json / Jwt__Secret env var).");
+var jwtIssuer   = builder.Configuration["Jwt:Issuer"] ?? "TehzeebPos";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "TehzeebPosClients";
+var jwtExpiryHours = double.TryParse(builder.Configuration["Jwt:ExpiryHours"], out var eh) ? eh : 12;
+
 builder.Services.AddDbContext<AppDbContext>(opt =>
-    opt.UseSqlite("Data Source=app.db"));
+    opt.UseNpgsql(builder.Configuration.GetConnectionString("Default")
+        ?? throw new InvalidOperationException("ConnectionStrings:Default is not configured.")));
+
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentTenant, HttpCurrentTenant>();
 
 builder.Services.AddCors(opt =>
     opt.AddDefaultPolicy(p =>
@@ -14,173 +39,64 @@ builder.Services.AddCors(opt =>
 
 builder.Services.AddEndpointsApiExplorer();
 
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(opt =>
+    {
+        opt.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtIssuer,
+            ValidateAudience = true,
+            ValidAudience = jwtAudience,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+    });
+
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("AdminOnly", p => p.RequireRole("admin"));
+
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<PrintAgentRegistry>();
+
+// Printing:Mode = "RemoteAgent" for the cloud build (backend on a VPS, prints
+// via a Local Print Agent over SignalR); anything else (including unset, the
+// desktop build's default) prints in-process, exactly as before Phase 1.
+var printingMode = builder.Configuration["Printing:Mode"];
+if (printingMode == "RemoteAgent")
+    builder.Services.AddSingleton<IPrintDispatcher, RemotePrintDispatcher>();
+else
+    builder.Services.AddSingleton<IPrintDispatcher, LocalPrintDispatcher>();
+
 var app = builder.Build();
 
-// Auto-migrate on startup
+// Apply pending EF Core migrations on startup (replaces the old
+// pragma_table_info-and-ALTER pattern now that we're on Postgres).
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.EnsureCreated();
+    db.Database.Migrate();
 
-    // Add ImagePath column to Dishes if missing — check first to avoid EF Core error log
-    var conn = db.Database.GetDbConnection();
-    if (conn.State != System.Data.ConnectionState.Open) conn.Open();
-    using (var cmd = conn.CreateCommand())
+    // Seed the single Tehzeeb restaurant + default users on first run.
+    // Multi-restaurant onboarding (Phase 6) will replace this with a real
+    // signup flow; for now there's exactly one tenant.
+    var restaurant = db.Restaurants.IgnoreQueryFilters().FirstOrDefault();
+    if (restaurant is null)
     {
-        cmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Dishes') WHERE name='ImagePath'";
-        if (Convert.ToInt64(cmd.ExecuteScalar()) == 0)
-            db.Database.ExecuteSqlRaw("ALTER TABLE Dishes ADD COLUMN ImagePath TEXT");
+        restaurant = new Restaurant { Name = "Tehzeeb Restaurant & Kitchen" };
+        db.Restaurants.Add(restaurant);
+        db.SaveChanges();
     }
 
-    // Add IsActive column to Dishes if missing
-    using (var cmdA = conn.CreateCommand())
+    if (!db.Settings.IgnoreQueryFilters().Any(s => s.RestaurantId == restaurant.Id))
+        db.Settings.Add(new Setting { RestaurantId = restaurant.Id, Key = "DefaultTaxRate", Value = "5" });
+
+    if (!db.Users.IgnoreQueryFilters().Any(u => u.RestaurantId == restaurant.Id))
     {
-        cmdA.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Dishes') WHERE name='IsActive'";
-        if (Convert.ToInt64(cmdA.ExecuteScalar()) == 0)
-            db.Database.ExecuteSqlRaw("ALTER TABLE Dishes ADD COLUMN IsActive INTEGER NOT NULL DEFAULT 1");
-    }
-
-    // Add PrintName column to Dishes if missing — lets Name hold a non-Latin
-    // script (e.g. Urdu) for on-screen display while receipts/kitchen tickets
-    // (ASCII-only ESC/POS output) print this instead, when set.
-    using (var cmdP = conn.CreateCommand())
-    {
-        cmdP.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Dishes') WHERE name='PrintName'";
-        if (Convert.ToInt64(cmdP.ExecuteScalar()) == 0)
-            db.Database.ExecuteSqlRaw("ALTER TABLE Dishes ADD COLUMN PrintName TEXT");
-    }
-
-    // Add DoublePrice column to Dishes if missing — optional 2nd price tier
-    // (meaning depends on PricingScheme: "Double" for Single/Double dishes
-    // like Biryani, or "Half" for Quarter/Half/Full dishes like Karahi).
-    // Null means the dish only has one price (Price).
-    using (var cmdDP = conn.CreateCommand())
-    {
-        cmdDP.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Dishes') WHERE name='DoublePrice'";
-        if (Convert.ToInt64(cmdDP.ExecuteScalar()) == 0)
-            db.Database.ExecuteSqlRaw("ALTER TABLE Dishes ADD COLUMN DoublePrice REAL");
-    }
-
-    // Add ThirdPrice column to Dishes if missing — optional 3rd price tier,
-    // only used for Quarter/Half/Full dishes ("Full" price). Null otherwise.
-    using (var cmdTP = conn.CreateCommand())
-    {
-        cmdTP.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Dishes') WHERE name='ThirdPrice'";
-        if (Convert.ToInt64(cmdTP.ExecuteScalar()) == 0)
-            db.Database.ExecuteSqlRaw("ALTER TABLE Dishes ADD COLUMN ThirdPrice REAL");
-    }
-
-    // Add PricingScheme column to Dishes if missing — "SingleDouble" or
-    // "QuarterHalfFull", determines the button labels on the Sales screen.
-    // Null/missing is treated as "SingleDouble" by convention (so existing
-    // dishes with DoublePrice already set keep behaving exactly as before).
-    using (var cmdPS = conn.CreateCommand())
-    {
-        cmdPS.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Dishes') WHERE name='PricingScheme'";
-        if (Convert.ToInt64(cmdPS.ExecuteScalar()) == 0)
-            db.Database.ExecuteSqlRaw("ALTER TABLE Dishes ADD COLUMN PricingScheme TEXT");
-    }
-
-    // Create Users table if it doesn't exist (safe for existing databases)
-    db.Database.ExecuteSqlRaw(@"
-        CREATE TABLE IF NOT EXISTS Users (
-            Id       INTEGER PRIMARY KEY AUTOINCREMENT,
-            Username TEXT NOT NULL UNIQUE,
-            Password TEXT NOT NULL,
-            Role     TEXT NOT NULL
-        )
-    ");
-
-    // Add TokenNumber column to Orders if missing
-    using (var cmd2 = conn.CreateCommand())
-    {
-        cmd2.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Orders') WHERE name='TokenNumber'";
-        if (Convert.ToInt64(cmd2.ExecuteScalar()) == 0)
-            db.Database.ExecuteSqlRaw("ALTER TABLE Orders ADD COLUMN TokenNumber INTEGER NOT NULL DEFAULT 0");
-    }
-
-    // Add PaymentMethod column to Orders if missing
-    using (var cmd3 = conn.CreateCommand())
-    {
-        cmd3.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Orders') WHERE name='PaymentMethod'";
-        if (Convert.ToInt64(cmd3.ExecuteScalar()) == 0)
-            db.Database.ExecuteSqlRaw("ALTER TABLE Orders ADD COLUMN PaymentMethod TEXT NOT NULL DEFAULT 'Cash'");
-    }
-
-    // Add cancellation columns to Orders if missing — cancelled orders are
-    // kept (not deleted) for audit purposes, just excluded from sales totals.
-    using (var cmd4 = conn.CreateCommand())
-    {
-        cmd4.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Orders') WHERE name='IsCancelled'";
-        if (Convert.ToInt64(cmd4.ExecuteScalar()) == 0)
-            db.Database.ExecuteSqlRaw("ALTER TABLE Orders ADD COLUMN IsCancelled INTEGER NOT NULL DEFAULT 0");
-    }
-    using (var cmd5 = conn.CreateCommand())
-    {
-        cmd5.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Orders') WHERE name='CancelledAt'";
-        if (Convert.ToInt64(cmd5.ExecuteScalar()) == 0)
-            db.Database.ExecuteSqlRaw("ALTER TABLE Orders ADD COLUMN CancelledAt TEXT");
-    }
-    using (var cmd6 = conn.CreateCommand())
-    {
-        cmd6.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Orders') WHERE name='CancelReason'";
-        if (Convert.ToInt64(cmd6.ExecuteScalar()) == 0)
-            db.Database.ExecuteSqlRaw("ALTER TABLE Orders ADD COLUMN CancelReason TEXT");
-    }
-
-    // Create Purchases table if it doesn't exist
-    db.Database.ExecuteSqlRaw(@"
-        CREATE TABLE IF NOT EXISTS Purchases (
-            Id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            Date        TEXT NOT NULL,
-            Supplier    TEXT NOT NULL DEFAULT '',
-            Description TEXT NOT NULL DEFAULT '',
-            TotalAmount REAL NOT NULL DEFAULT 0,
-            ImagePath   TEXT,
-            Category    TEXT NOT NULL DEFAULT 'General'
-        )
-    ");
-
-    // Create PurchaseAttachments table if it doesn't exist, and backfill any
-    // existing single-image Purchases.ImagePath into it — a one-time copy
-    // that only runs the first time this table is created, so expenses keep
-    // their old receipt photo as their first attachment going forward.
-    using (var checkCmd = conn.CreateCommand())
-    {
-        checkCmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='PurchaseAttachments'";
-        var attachmentsTableExisted = Convert.ToInt64(checkCmd.ExecuteScalar()) > 0;
-
-        db.Database.ExecuteSqlRaw(@"
-            CREATE TABLE IF NOT EXISTS PurchaseAttachments (
-                Id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                PurchaseId INTEGER NOT NULL,
-                ImagePath  TEXT NOT NULL,
-                UploadedAt TEXT NOT NULL
-            )
-        ");
-
-        if (!attachmentsTableExisted)
-        {
-            db.Database.ExecuteSqlRaw(@"
-                INSERT INTO PurchaseAttachments (PurchaseId, ImagePath, UploadedAt)
-                SELECT Id, ImagePath, Date FROM Purchases
-                WHERE ImagePath IS NOT NULL AND ImagePath <> ''
-            ");
-        }
-    }
-
-    if (!db.Settings.Any())
-        db.Settings.Add(new Setting { Key = "DefaultTaxRate", Value = "5" });
-
-    if (!db.Users.Any())
-    {
-        db.Users.Add(new User { Username = "admin",   Password = HashPassword("admin123"),   Role = "admin" });
-        db.Users.Add(new User { Username = "cashier", Password = HashPassword("cashier123"), Role = "cashier" });
-    }
-    else
-    {
-        var plain = db.Users.Where(u => u.Password.Length != 64).ToList();
-        foreach (var u in plain) u.Password = HashPassword(u.Password);
+        db.Users.Add(new User { RestaurantId = restaurant.Id, Username = "admin",   Password = HashPassword("admin123"),   Role = "admin" });
+        db.Users.Add(new User { RestaurantId = restaurant.Id, Username = "cashier", Password = HashPassword("cashier123"), Role = "cashier" });
     }
 
     db.SaveChanges();
@@ -198,60 +114,93 @@ app.UseStaticFiles(new StaticFileOptions
 });
 
 app.UseCors();
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapHub<PrintHub>("/hubs/print");
 
 static string HashPassword(string p) =>
     Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(p))).ToLower();
 
+static string IssueToken(User user, string jwtSecret, string jwtIssuer, string jwtAudience, double expiryHours)
+{
+    var claims = new[]
+    {
+        new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+        new Claim(ClaimTypes.Name, user.Username),
+        new Claim(ClaimTypes.Role, user.Role),
+        new Claim("restaurant_id", user.RestaurantId.ToString())
+    };
+    var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret));
+    var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+    var token = new JwtSecurityToken(
+        issuer: jwtIssuer,
+        audience: jwtAudience,
+        claims: claims,
+        expires: DateTime.UtcNow.AddHours(expiryHours),
+        signingCredentials: creds);
+    return new JwtSecurityTokenHandler().WriteToken(token);
+}
+
 // ─── AUTH ────────────────────────────────────────────────────────────────────
+// Login is intentionally the one endpoint that looks a user up without a
+// restaurant already established (there's no token yet to carry one) — it
+// queries Users unscoped (IgnoreQueryFilters) by username. Username is
+// globally unique today because there's a single tenant; before onboarding a
+// second restaurant this needs to become unique per-(RestaurantId, Username)
+// with a tenant-selection step in the login flow (Phase 6 concern, not this
+// phase — flagged here so it isn't forgotten).
 
 app.MapPost("/api/auth/login", async (LoginDto dto, AppDbContext db) =>
 {
     var hashed = HashPassword(dto.Password);
-    var user = await db.Users.FirstOrDefaultAsync(
+    var user = await db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(
         u => u.Username == dto.Username && u.Password == hashed);
     if (user is null) return Results.Unauthorized();
-    return Results.Ok(new { username = user.Username, role = user.Role });
+    var token = IssueToken(user, jwtSecret, jwtIssuer, jwtAudience, jwtExpiryHours);
+    return Results.Ok(new { token, username = user.Username, role = user.Role });
 });
 
 // ─── USERS ──────────────────────────────────────────────────────────────────
 
 app.MapGet("/api/users", async (AppDbContext db) =>
-    await db.Users.Select(u => new { u.Id, u.Username, u.Role }).ToListAsync());
+    await db.Users.Select(u => new { u.Id, u.Username, u.Role }).ToListAsync())
+    .RequireAuthorization("AdminOnly");
 
-app.MapPost("/api/users", async (CreateUserDto dto, AppDbContext db) =>
+app.MapPost("/api/users", async (CreateUserDto dto, AppDbContext db, ICurrentTenant tenant) =>
 {
     if (await db.Users.AnyAsync(u => u.Username == dto.Username))
         return Results.Conflict(new { message = "Username already exists." });
-    var user = new User { Username = dto.Username, Password = HashPassword(dto.Password), Role = dto.Role };
+    var user = new User { RestaurantId = tenant.RestaurantId!.Value, Username = dto.Username, Password = HashPassword(dto.Password), Role = dto.Role };
     db.Users.Add(user);
     await db.SaveChangesAsync();
     return Results.Created($"/api/users/{user.Id}", new { user.Id, user.Username, user.Role });
-});
+}).RequireAuthorization("AdminOnly");
 
 app.MapPut("/api/users/{id:int}/password", async (int id, ChangePasswordDto dto, AppDbContext db) =>
 {
-    var user = await db.Users.FindAsync(id);
+    var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id);
     if (user is null) return Results.NotFound();
     user.Password = HashPassword(dto.Password);
     await db.SaveChangesAsync();
     return Results.NoContent();
-});
+}).RequireAuthorization("AdminOnly");
 
 app.MapDelete("/api/users/{id:int}", async (int id, AppDbContext db) =>
 {
-    var user = await db.Users.FindAsync(id);
+    var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id);
     if (user is null) return Results.NotFound();
     db.Users.Remove(user);
     await db.SaveChangesAsync();
     return Results.NoContent();
-});
+}).RequireAuthorization("AdminOnly");
 
 // ─── DISH IMAGE ────────────────────────────────────────────────────────────
 
 app.MapPost("/api/dishes/{id:int}/image",
     async (int id, HttpRequest request, AppDbContext db, IWebHostEnvironment env) =>
 {
-    var dish = await db.Dishes.FindAsync(id);
+    var dish = await db.Dishes.FirstOrDefaultAsync(d => d.Id == id);
     if (dish is null) return Results.NotFound();
     if (!request.HasFormContentType || request.Form.Files.Count == 0)
         return Results.BadRequest("No file.");
@@ -265,19 +214,20 @@ app.MapPost("/api/dishes/{id:int}/image",
     dish.ImagePath = $"/uploads/dishes/{filename}";
     await db.SaveChangesAsync();
     return Results.Ok(new { imagePath = dish.ImagePath });
-});
+}).RequireAuthorization("AdminOnly");
 
 // ─── SETTINGS ───────────────────────────────────────────────────────────────
 
 app.MapGet("/api/settings", async (AppDbContext db) =>
-    await db.Settings.ToListAsync());
+    await db.Settings.ToListAsync())
+    .RequireAuthorization();
 
-app.MapPut("/api/settings/{key}", async (string key, SettingDto dto, AppDbContext db) =>
+app.MapPut("/api/settings/{key}", async (string key, SettingDto dto, AppDbContext db, ICurrentTenant tenant) =>
 {
     var setting = await db.Settings.FirstOrDefaultAsync(s => s.Key == key);
     if (setting is null)
     {
-        setting = new Setting { Key = key, Value = dto.Value };
+        setting = new Setting { RestaurantId = tenant.RestaurantId!.Value, Key = key, Value = dto.Value };
         db.Settings.Add(setting);
     }
     else
@@ -286,24 +236,25 @@ app.MapPut("/api/settings/{key}", async (string key, SettingDto dto, AppDbContex
     }
     await db.SaveChangesAsync();
     return Results.Ok(setting);
-});
+}).RequireAuthorization("AdminOnly");
 
 // ─── DISHES ─────────────────────────────────────────────────────────────────
 
 app.MapGet("/api/dishes", async (AppDbContext db) =>
-    await db.Dishes.OrderBy(d => d.Name).ToListAsync());
+    await db.Dishes.OrderBy(d => d.Name).ToListAsync())
+    .RequireAuthorization();
 
-app.MapPost("/api/dishes", async (DishDto dto, AppDbContext db) =>
+app.MapPost("/api/dishes", async (DishDto dto, AppDbContext db, ICurrentTenant tenant) =>
 {
-    var dish = new Dish { Name = dto.Name, Price = dto.Price, TaxRate = dto.TaxRate, PrintName = dto.PrintName, DoublePrice = dto.DoublePrice, ThirdPrice = dto.ThirdPrice, PricingScheme = dto.PricingScheme };
+    var dish = new Dish { RestaurantId = tenant.RestaurantId!.Value, Name = dto.Name, Price = dto.Price, TaxRate = dto.TaxRate, PrintName = dto.PrintName, DoublePrice = dto.DoublePrice, ThirdPrice = dto.ThirdPrice, PricingScheme = dto.PricingScheme };
     db.Dishes.Add(dish);
     await db.SaveChangesAsync();
     return Results.Created($"/api/dishes/{dish.Id}", dish);
-});
+}).RequireAuthorization("AdminOnly");
 
 app.MapPut("/api/dishes/{id:int}", async (int id, DishDto dto, AppDbContext db) =>
 {
-    var dish = await db.Dishes.FindAsync(id);
+    var dish = await db.Dishes.FirstOrDefaultAsync(d => d.Id == id);
     if (dish is null) return Results.NotFound();
     dish.Name = dto.Name;
     dish.Price = dto.Price;
@@ -314,31 +265,31 @@ app.MapPut("/api/dishes/{id:int}", async (int id, DishDto dto, AppDbContext db) 
     dish.PricingScheme = dto.PricingScheme;
     await db.SaveChangesAsync();
     return Results.Ok(dish);
-});
+}).RequireAuthorization("AdminOnly");
 
 app.MapPatch("/api/dishes/{id:int}/toggle", async (int id, AppDbContext db) =>
 {
-    var dish = await db.Dishes.FindAsync(id);
+    var dish = await db.Dishes.FirstOrDefaultAsync(d => d.Id == id);
     if (dish is null) return Results.NotFound();
     dish.IsActive = !dish.IsActive;
     await db.SaveChangesAsync();
     return Results.Ok(dish);
-});
+}).RequireAuthorization("AdminOnly");
 
 app.MapPatch("/api/dishes/toggle-all", async (ToggleAllDto dto, AppDbContext db) =>
 {
     await db.Dishes.ExecuteUpdateAsync(s => s.SetProperty(d => d.IsActive, dto.IsActive));
     return Results.Ok(await db.Dishes.ToListAsync());
-});
+}).RequireAuthorization("AdminOnly");
 
 app.MapDelete("/api/dishes/{id:int}", async (int id, AppDbContext db) =>
 {
-    var dish = await db.Dishes.FindAsync(id);
+    var dish = await db.Dishes.FirstOrDefaultAsync(d => d.Id == id);
     if (dish is null) return Results.NotFound();
     db.Dishes.Remove(dish);
     await db.SaveChangesAsync();
     return Results.NoContent();
-});
+}).RequireAuthorization("AdminOnly");
 
 // ─── ORDERS ─────────────────────────────────────────────────────────────────
 
@@ -373,7 +324,7 @@ app.MapGet("/api/orders", async (AppDbContext db, string? date, string? from, st
         .OrderByDescending(o => o.OrderDate)
         .Take(50)
         .ToListAsync();
-});
+}).RequireAuthorization();
 
 app.MapGet("/api/stats", async (AppDbContext db) =>
 {
@@ -447,7 +398,7 @@ app.MapGet("/api/stats", async (AppDbContext db) =>
         topItems,
         last7Days
     });
-});
+}).RequireAuthorization();
 
 // ─── REPORTS ────────────────────────────────────────────────────────────────
 
@@ -503,13 +454,13 @@ app.MapGet("/api/reports", async (AppDbContext db, string? from, string? to, int
         .ToList();
 
     return Results.Ok(new { summary, itemBreakdown, dailySales });
-});
+}).RequireAuthorization("AdminOnly");
 
 app.MapGet("/api/orders/{id:int}", async (int id, AppDbContext db) =>
 {
     var order = await db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == id);
     return order is null ? Results.NotFound() : Results.Ok(order);
-});
+}).RequireAuthorization();
 
 app.MapPatch("/api/orders/{id:int}/cancel", async (int id, CancelOrderDto dto, AppDbContext db) =>
 {
@@ -522,9 +473,9 @@ app.MapPatch("/api/orders/{id:int}/cancel", async (int id, CancelOrderDto dto, A
     order.CancelReason = string.IsNullOrWhiteSpace(dto.Reason) ? null : dto.Reason.Trim();
     await db.SaveChangesAsync();
     return Results.Ok(order);
-});
+}).RequireAuthorization();
 
-app.MapPost("/api/orders", async (CreateOrderDto dto, AppDbContext db) =>
+app.MapPost("/api/orders", async (CreateOrderDto dto, AppDbContext db, ICurrentTenant tenant) =>
 {
     // Daily sequential token number (resets each UAE day, UTC+4)
     var uaeOffset  = TimeSpan.FromHours(4);
@@ -537,6 +488,7 @@ app.MapPost("/api/orders", async (CreateOrderDto dto, AppDbContext db) =>
 
     var order = new Order
     {
+        RestaurantId  = tenant.RestaurantId!.Value,
         OrderDate     = DateTime.UtcNow,
         TokenNumber   = maxToken + 1,
         PaymentMethod = dto.PaymentMethod,
@@ -546,6 +498,7 @@ app.MapPost("/api/orders", async (CreateOrderDto dto, AppDbContext db) =>
         GrandTotal  = dto.GrandTotal,
         Items = dto.Items.Select(i => new OrderItem
         {
+            RestaurantId = tenant.RestaurantId!.Value,
             DishId    = i.DishId,
             DishName  = i.DishName,
             Quantity  = i.Quantity,
@@ -556,7 +509,7 @@ app.MapPost("/api/orders", async (CreateOrderDto dto, AppDbContext db) =>
     db.Orders.Add(order);
     await db.SaveChangesAsync();
     return Results.Created($"/api/orders/{order.Id}", order);
-});
+}).RequireAuthorization();
 
 // ─── Z-REPORT ───────────────────────────────────────────────────────────────
 
@@ -591,7 +544,7 @@ app.MapGet("/api/z-report", async (AppDbContext db) =>
         netSales         = orders.Sum(o => o.SubTotal),
         topItems
     });
-});
+}).RequireAuthorization("AdminOnly");
 
 app.MapPost("/api/z-report", async (AppDbContext db) =>
 {
@@ -710,11 +663,16 @@ app.MapPost("/api/z-report", async (AppDbContext db) =>
         emailSent,
         emailError
     });
-});
+}).RequireAuthorization("AdminOnly");
 
 // ─── PRINTING ───────────────────────────────────────────────────────────────
+// Goes through IPrintDispatcher rather than RawPrinterHelper directly, so the
+// same backend works both as the desktop build (prints in-process — printer
+// is on this machine) and the cloud build (dispatches to a Local Print Agent
+// over SignalR — printer is at the restaurant, not on the VPS). See
+// PrintDispatch.cs for the two implementations and Printing:Mode config.
 
-app.MapPost("/api/print/receipt", async (PrintReceiptDto dto, AppDbContext db) =>
+app.MapPost("/api/print/receipt", async (PrintReceiptDto dto, AppDbContext db, IPrintDispatcher dispatcher, ICurrentTenant tenant) =>
 {
     var printerName = (await db.Settings.FirstOrDefaultAsync(s => s.Key == "PrinterName"))?.Value;
     if (string.IsNullOrWhiteSpace(printerName))
@@ -723,22 +681,16 @@ app.MapPost("/api/print/receipt", async (PrintReceiptDto dto, AppDbContext db) =
     var copiesSetting = (await db.Settings.FirstOrDefaultAsync(s => s.Key == "PrinterCustomerCopies"))?.Value;
     var copies = int.TryParse(copiesSetting, out var c) ? Math.Max(1, c) : 1;
 
-#pragma warning disable CA1416 // this API runs on Windows only, which is where this backend is deployed
-    try
-    {
-        var bytes = ReceiptPrinter.BuildCustomerReceipt(dto);
-        for (int i = 0; i < copies; i++)
-            RawPrinterHelper.SendBytesToPrinter(printerName, bytes);
-        return Results.Ok(new { printed = true });
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(detail: ex.Message, statusCode: 500, title: "Print failed");
-    }
+#pragma warning disable CA1416 // ReceiptPrinter/LogoImage use System.Drawing (Windows-only) — fine, both desktop and the planned cloud VPS are Windows
+    var bytes = ReceiptPrinter.BuildCustomerReceipt(dto);
 #pragma warning restore CA1416
-});
+    var result = await dispatcher.PrintAsync(tenant.RestaurantId!.Value, printerName, bytes, copies);
+    return result.Success
+        ? Results.Ok(new { printed = true })
+        : Results.Problem(detail: result.Error, statusCode: 500, title: "Print failed");
+}).RequireAuthorization();
 
-app.MapPost("/api/print/kitchen-token", async (PrintKitchenDto dto, AppDbContext db) =>
+app.MapPost("/api/print/kitchen-token", async (PrintKitchenDto dto, AppDbContext db, IPrintDispatcher dispatcher, ICurrentTenant tenant) =>
 {
     var printerName = (await db.Settings.FirstOrDefaultAsync(s => s.Key == "PrinterName"))?.Value;
     if (string.IsNullOrWhiteSpace(printerName))
@@ -747,20 +699,34 @@ app.MapPost("/api/print/kitchen-token", async (PrintKitchenDto dto, AppDbContext
     var copiesSetting = (await db.Settings.FirstOrDefaultAsync(s => s.Key == "PrinterKitchenCopies"))?.Value;
     var copies = int.TryParse(copiesSetting, out var c) ? Math.Max(1, c) : 1;
 
-#pragma warning disable CA1416 // this API runs on Windows only, which is where this backend is deployed
-    try
-    {
-        var bytes = ReceiptPrinter.BuildKitchenToken(dto);
-        for (int i = 0; i < copies; i++)
-            RawPrinterHelper.SendBytesToPrinter(printerName, bytes);
-        return Results.Ok(new { printed = true });
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(detail: ex.Message, statusCode: 500, title: "Print failed");
-    }
+#pragma warning disable CA1416 // ReceiptPrinter/LogoImage use System.Drawing (Windows-only) — fine, both desktop and the planned cloud VPS are Windows
+    var bytes = ReceiptPrinter.BuildKitchenToken(dto);
 #pragma warning restore CA1416
-});
+    var result = await dispatcher.PrintAsync(tenant.RestaurantId!.Value, printerName, bytes, copies);
+    return result.Success
+        ? Results.Ok(new { printed = true })
+        : Results.Problem(detail: result.Error, statusCode: 500, title: "Print failed");
+}).RequireAuthorization();
+
+// ─── PRINT AGENT ────────────────────────────────────────────────────────────
+
+app.MapGet("/api/printer-agent/key", async (AppDbContext db, ICurrentTenant tenant) =>
+{
+    var restaurant = await db.Restaurants.FirstAsync(r => r.Id == tenant.RestaurantId!.Value);
+    return Results.Ok(new { key = restaurant.PrintAgentKey });
+}).RequireAuthorization("AdminOnly");
+
+app.MapPost("/api/printer-agent/regenerate-key", async (AppDbContext db, ICurrentTenant tenant) =>
+{
+    var restaurant = await db.Restaurants.FirstAsync(r => r.Id == tenant.RestaurantId!.Value);
+    restaurant.PrintAgentKey = Guid.NewGuid().ToString("N");
+    await db.SaveChangesAsync();
+    return Results.Ok(new { key = restaurant.PrintAgentKey });
+}).RequireAuthorization("AdminOnly");
+
+app.MapGet("/api/printer-agent/status", (PrintAgentRegistry registry, ICurrentTenant tenant) =>
+    Results.Ok(new { connected = registry.IsConnected(tenant.RestaurantId!.Value) }))
+    .RequireAuthorization("AdminOnly");
 
 // ─── PURCHASES ──────────────────────────────────────────────────────────────
 
@@ -780,15 +746,15 @@ app.MapGet("/api/purchases", async (AppDbContext db, string? from, string? to, s
         query = query.Where(p => p.Category == category);
 
     return await query.OrderByDescending(p => p.Date).ToListAsync();
-});
+}).RequireAuthorization();
 
 app.MapGet("/api/purchases/{id:int}", async (int id, AppDbContext db) =>
 {
     var p = await db.Purchases.Include(p => p.Attachments).FirstOrDefaultAsync(x => x.Id == id);
     return p is null ? Results.NotFound() : Results.Ok(p);
-});
+}).RequireAuthorization();
 
-app.MapPost("/api/purchases", async (HttpRequest request, AppDbContext db) =>
+app.MapPost("/api/purchases", async (HttpRequest request, AppDbContext db, ICurrentTenant tenant) =>
 {
     if (!request.HasFormContentType) return Results.BadRequest("Expected multipart form.");
     var form = await request.ReadFormAsync();
@@ -803,6 +769,7 @@ app.MapPost("/api/purchases", async (HttpRequest request, AppDbContext db) =>
 
     var purchase = new Purchase
     {
+        RestaurantId = tenant.RestaurantId!.Value,
         Date        = date,
         Supplier    = form["supplier"].ToString(),
         Description = form["description"].ToString(),
@@ -813,11 +780,11 @@ app.MapPost("/api/purchases", async (HttpRequest request, AppDbContext db) =>
     db.Purchases.Add(purchase);
     await db.SaveChangesAsync();
     return Results.Created($"/api/purchases/{purchase.Id}", purchase);
-});
+}).RequireAuthorization();
 
 app.MapPut("/api/purchases/{id:int}", async (int id, HttpRequest request, AppDbContext db) =>
 {
-    var purchase = await db.Purchases.FindAsync(id);
+    var purchase = await db.Purchases.FirstOrDefaultAsync(p => p.Id == id);
     if (purchase is null) return Results.NotFound();
 
     if (!request.HasFormContentType) return Results.BadRequest("Expected multipart form.");
@@ -836,11 +803,11 @@ app.MapPut("/api/purchases/{id:int}", async (int id, HttpRequest request, AppDbC
 
     await db.SaveChangesAsync();
     return Results.Ok(purchase);
-});
+}).RequireAuthorization();
 
-app.MapPost("/api/purchases/{id:int}/attachments", async (int id, HttpRequest request, AppDbContext db) =>
+app.MapPost("/api/purchases/{id:int}/attachments", async (int id, HttpRequest request, AppDbContext db, ICurrentTenant tenant) =>
 {
-    var purchase = await db.Purchases.FindAsync(id);
+    var purchase = await db.Purchases.FirstOrDefaultAsync(p => p.Id == id);
     if (purchase is null) return Results.NotFound();
 
     if (!request.HasFormContentType) return Results.BadRequest("Expected multipart form.");
@@ -861,6 +828,7 @@ app.MapPost("/api/purchases/{id:int}/attachments", async (int id, HttpRequest re
 
         var attachment = new PurchaseAttachment
         {
+            RestaurantId = tenant.RestaurantId!.Value,
             PurchaseId = id,
             ImagePath  = $"/uploads/purchases/{year}/{month}/{filename}",
             UploadedAt = DateTime.UtcNow
@@ -871,7 +839,7 @@ app.MapPost("/api/purchases/{id:int}/attachments", async (int id, HttpRequest re
 
     await db.SaveChangesAsync();
     return Results.Ok(added);
-});
+}).RequireAuthorization();
 
 app.MapDelete("/api/purchases/{id:int}/attachments/{attachmentId:int}", async (int id, int attachmentId, AppDbContext db) =>
 {
@@ -884,7 +852,7 @@ app.MapDelete("/api/purchases/{id:int}/attachments/{attachmentId:int}", async (i
     db.PurchaseAttachments.Remove(attachment);
     await db.SaveChangesAsync();
     return Results.NoContent();
-});
+}).RequireAuthorization();
 
 app.MapDelete("/api/purchases/{id:int}", async (int id, AppDbContext db) =>
 {
@@ -900,7 +868,7 @@ app.MapDelete("/api/purchases/{id:int}", async (int id, AppDbContext db) =>
     db.Purchases.Remove(purchase);
     await db.SaveChangesAsync();
     return Results.NoContent();
-});
+}).RequireAuthorization();
 
 // ─── SPA FALLBACK ───────────────────────────────────────────────────────────
 // Serves the built Angular app (copied into wwwroot at package time) for any
@@ -910,10 +878,30 @@ app.MapFallbackToFile("index.html");
 
 app.Run();
 
+// ─── TENANT CONTEXT ─────────────────────────────────────────────────────────
+
+public interface ICurrentTenant
+{
+    int? RestaurantId { get; }
+}
+
+public class HttpCurrentTenant(IHttpContextAccessor accessor) : ICurrentTenant
+{
+    public int? RestaurantId
+    {
+        get
+        {
+            var claim = accessor.HttpContext?.User.FindFirst("restaurant_id")?.Value;
+            return int.TryParse(claim, out var id) ? id : null;
+        }
+    }
+}
+
 // ─── DB CONTEXT ─────────────────────────────────────────────────────────────
 
-public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentTenant tenant) : DbContext(options)
 {
+    public DbSet<Restaurant> Restaurants => Set<Restaurant>();
     public DbSet<Dish> Dishes => Set<Dish>();
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
@@ -921,13 +909,41 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<User> Users => Set<User>();
     public DbSet<Purchase> Purchases => Set<Purchase>();
     public DbSet<PurchaseAttachment> PurchaseAttachments => Set<PurchaseAttachment>();
+
+    // Every tenant-owned table is filtered to the caller's RestaurantId (from
+    // the JWT) at the query level — a missed .Where() elsewhere in an
+    // endpoint can't leak another restaurant's rows. tenant.RestaurantId is
+    // only ever null pre-authentication (the login endpoint explicitly opts
+    // out via IgnoreQueryFilters), so this bypass isn't reachable from any
+    // [Authorize]-protected endpoint.
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Dish>().HasQueryFilter(x => tenant.RestaurantId == null || x.RestaurantId == tenant.RestaurantId);
+        modelBuilder.Entity<Order>().HasQueryFilter(x => tenant.RestaurantId == null || x.RestaurantId == tenant.RestaurantId);
+        modelBuilder.Entity<OrderItem>().HasQueryFilter(x => tenant.RestaurantId == null || x.RestaurantId == tenant.RestaurantId);
+        modelBuilder.Entity<Setting>().HasQueryFilter(x => tenant.RestaurantId == null || x.RestaurantId == tenant.RestaurantId);
+        modelBuilder.Entity<User>().HasQueryFilter(x => tenant.RestaurantId == null || x.RestaurantId == tenant.RestaurantId);
+        modelBuilder.Entity<Purchase>().HasQueryFilter(x => tenant.RestaurantId == null || x.RestaurantId == tenant.RestaurantId);
+        modelBuilder.Entity<PurchaseAttachment>().HasQueryFilter(x => tenant.RestaurantId == null || x.RestaurantId == tenant.RestaurantId);
+    }
 }
 
 // ─── MODELS ─────────────────────────────────────────────────────────────────
 
+public class Restaurant
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    // Machine credential the Local Print Agent presents when it connects to
+    // /hubs/print — deliberately separate from user JWTs (see PrintHub.cs).
+    public string PrintAgentKey { get; set; } = Guid.NewGuid().ToString("N");
+}
+
 public class Dish
 {
     public int Id { get; set; }
+    public int RestaurantId { get; set; }
     public string Name { get; set; } = "";
     public decimal Price { get; set; }
     public decimal TaxRate { get; set; }
@@ -950,6 +966,7 @@ public class Dish
 public class Order
 {
     public int Id { get; set; }
+    public int RestaurantId { get; set; }
     public DateTime OrderDate { get; set; }
     public int TokenNumber { get; set; }
     public string PaymentMethod { get; set; } = "Cash";
@@ -966,6 +983,7 @@ public class Order
 public class OrderItem
 {
     public int Id { get; set; }
+    public int RestaurantId { get; set; }
     public int OrderId { get; set; }
     public int DishId { get; set; }
     public string DishName { get; set; } = "";
@@ -977,6 +995,7 @@ public class OrderItem
 public class Setting
 {
     public int Id { get; set; }
+    public int RestaurantId { get; set; }
     public string Key { get; set; } = "";
     public string Value { get; set; } = "";
 }
@@ -984,6 +1003,7 @@ public class Setting
 public class User
 {
     public int Id { get; set; }
+    public int RestaurantId { get; set; }
     public string Username { get; set; } = "";
     public string Password { get; set; } = "";
     public string Role { get; set; } = "";
@@ -992,6 +1012,7 @@ public class User
 public class Purchase
 {
     public int Id { get; set; }
+    public int RestaurantId { get; set; }
     public DateTime Date { get; set; }
     public string Supplier { get; set; } = "";
     public string Description { get; set; } = "";
@@ -1006,6 +1027,7 @@ public class Purchase
 public class PurchaseAttachment
 {
     public int Id { get; set; }
+    public int RestaurantId { get; set; }
     public int PurchaseId { get; set; }
     public string ImagePath { get; set; } = "";
     public DateTime UploadedAt { get; set; }

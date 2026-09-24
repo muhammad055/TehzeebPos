@@ -7,9 +7,18 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.0" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.10" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.10" />
     <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
+  </ItemGroup>
+
+  <!-- Dev-only secrets/connection string — must never ship in a publish output
+       (desktop installer or cloud VPS deploy), only used by local `dotnet run`. -->
+  <ItemGroup>
+    <Content Update="appsettings.Development.json">
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

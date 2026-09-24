@@ -5,6 +5,7 @@
       "name": "frontend-ng",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["start"],
+      "cwd": "frontend-ng",
       "port": 4200
     }
   ]

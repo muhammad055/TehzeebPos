@@ -1,8 +1,10 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
+import { environment } from '../environments/environment';
 
 export interface AuthUser {
+  token: string;
   username: string;
   role: 'admin' | 'cashier';
 }
@@ -11,7 +13,7 @@ export interface AuthUser {
 export class AuthService {
   private http   = inject(HttpClient);
   private router = inject(Router);
-  private base   = 'http://localhost:5050/api';
+  private base   = environment.apiBase;
   private readonly KEY = 'pos_user';
 
   login(username: string, password: string) {
@@ -25,6 +27,10 @@ export class AuthService {
   getUser(): AuthUser | null {
     const raw = localStorage.getItem(this.KEY);
     return raw ? JSON.parse(raw) : null;
+  }
+
+  getToken(): string | null {
+    return this.getUser()?.token ?? null;
   }
 
   isLoggedIn(): boolean {

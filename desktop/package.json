@@ -23,8 +23,10 @@
       "output": "release"
     },
     "files": [
-      "main.js"
+      "main.js",
+      "node_modules/**/*"
     ],
+    "asar": false,
     "extraResources": [
       {
         "from": "resources/backend",
@@ -42,5 +44,8 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
     }
+  },
+  "dependencies": {
+    "embedded-postgres": "^16.14.0-beta.17"
   }
 }

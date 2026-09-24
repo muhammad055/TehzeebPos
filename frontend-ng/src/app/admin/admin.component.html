@@ -63,6 +63,25 @@
         <button class="btn btn-outline" style="margin-top:14px" (click)="savePrinterSettings()">
           Save Printer Settings
         </button>
+
+        <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--border)">
+          <label class="field-label">
+            Print Agent
+            <span [style.color]="printAgentConnected ? 'var(--success)' : 'var(--text-muted)'">
+              ● {{ printAgentConnected ? 'Connected' : 'Not connected' }}
+            </span>
+          </label>
+          <p class="field-hint">
+            Only needed for a cloud-hosted install — a small program that runs at the restaurant
+            and does the actual printing. Paste this key into its configuration.
+          </p>
+          <div class="input-group">
+            <input type="text" [value]="printAgentKey" readonly />
+          </div>
+          <button class="btn btn-ghost btn-sm" style="margin-top:8px" (click)="regeneratePrintAgentKey()">
+            Regenerate Key
+          </button>
+        </div>
       </div>
 
       <!-- Email panel -->

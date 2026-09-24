@@ -7,6 +7,12 @@ backend/app.db-shm
 backend/app.db-wal
 backend/wwwroot/uploads/
 
+# Print Agent (.NET)
+print-agent/bin/
+print-agent/obj/
+print-agent/appsettings.Development.json
+print-agent/appsettings.Production.json
+
 # Frontend (Angular)
 frontend-ng/node_modules/
 frontend-ng/dist/
