@@ -526,7 +526,6 @@ input:focus {
 .dish-toggle-btn--off { background: rgba(150,150,150,0.15); color: var(--text-muted); }
 
 .dish-row--inactive td { opacity: 0.45; }
-.dish-row--inactive .action-cell { opacity: 1; }
 
 /* ── Dish Table ──────────────────────────────────── */
 .dish-table-wrap { overflow: auto; }
@@ -561,22 +560,16 @@ input:focus {
 .dish-table td:nth-child(3) { font-family: var(--font-num); }
 
 /* Without explicit widths, the browser's table auto-layout hands leftover
-   space to Price/Tax/Actions somewhat arbitrarily, leaving big empty gutters
-   in those columns (visible as blank space when a row is hovered/selected).
+   space to Price/Tax somewhat arbitrarily, leaving big empty gutters in
+   those columns (visible as blank space when a row is hovered/selected).
    Shrink those to their content and let the Name column absorb the slack.
-   The `width: 1%` shrink-to-fit trick works for plain text (Price/Tax) but
-   not reliably for the Actions column's flex layout — the table cell can end
-   up narrower than its own flex content, leaving the cell's background/
-   border (and so the hover highlight and row separator line) short of where
-   the buttons actually render. Give that column an explicit min-width
-   instead, generous enough for the wider "Inactive" state of the toggle. */
+   The Actions column is left to size itself naturally (see .action-cell
+   below) rather than being forced — a flex layout's content width isn't
+   measured reliably by the table's own auto-layout sizing. */
 .dish-table td:nth-child(3),
 .dish-table td:nth-child(4) {
   width: 1%;
   white-space: nowrap;
-}
-.dish-table td.action-cell {
-  min-width: 150px;
 }
 .dish-table td.i18n-dish-name { width: 100%; }
 
@@ -586,10 +579,10 @@ input:focus {
 .editing-row td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
 
 .action-cell {
-  display: flex;
-  gap: 6px;
-  align-items: center;
   white-space: nowrap;
+}
+.action-cell > * + * {
+  margin-left: 6px;
 }
 
 .icon-btn {
