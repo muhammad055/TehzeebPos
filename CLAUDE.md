@@ -86,7 +86,9 @@ Printing goes through `IPrintDispatcher` (`backend/PrintDispatch.cs`) rather tha
 One Flutter app (Android + iOS), role-gated Owner/Manager modes. Full plan + milestone checklist: `ProjectPlanMobile.md` (overall roadmap: `ProjectPlan.md`). Setup/run: `mobile/README.md`.
 - **Roles** are now `owner | admin | cashier` (`Roles` class in `backend/Program.cs`). `AdminOnly` policy = admin **or** owner; `OwnerOnly` exists for future use. `POST /api/users` rejects other role values (400). Angular `isAdmin()` treats owner as admin.
 - `POST /api/auth/login` accepts optional `"client":"mobile"` → token lifetime `Jwt:MobileExpiryHours` (default 30 days) instead of `Jwt:ExpiryHours` (12h). No refresh-token flow yet.
-- M0 Flutter code was written on a Windows box without Flutter — **not yet compiled**; run `flutter create .` inside `mobile/` first (see its README).
+- Status: M0–M3 (login/role routing, dashboard + 7/30-day trend, orders/cancel, reports, Z-report, menu management, expenses) are coded, analyzer-clean and unit-tested, and the backend calls were verified by curl — but **the app has not yet been run on a device/emulator**. Platform folders (`android/`, `ios/`) are committed. M4 (push) and M5 (release) not started. Details: `ProjectPlanMobile.md`.
+- Windows dev box: `flutter.bat` needs PowerShell (blocked by group policy); the SDK's `shared.bat` was locally patched — see `mobile/README.md` and `ProjectPlanMobile.md`.
+- `PATCH /api/orders/{id}/cancel` is `AdminOnly`; `GET /api/stats/trend` added.
 
 ## Backend architecture highlights
 

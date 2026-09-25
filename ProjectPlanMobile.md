@@ -1,7 +1,24 @@
 # Tehzeeb POS — Phase 2: Flutter Owner/Manager App
 
 Companion to `ProjectPlan.md` (overall SaaS roadmap). This file covers **Phase 2 only**.
-Status: **M0 code written** (backend roles verified locally; Flutter scaffold written on a machine without Flutter — not yet compiled, see `mobile/README.md` first-time setup). Phase 1 cloud migration is functionally complete; VPS deploy is manual.
+Status (2026-09-25): **M0–M3 code complete and pushed; M4–M5 not started. Nothing has been run on a device/emulator yet.** `flutter analyze` is clean and 8 unit tests pass; the backend endpoints the app uses were verified with curl against the local backend.
+
+## Progress snapshot (2026-09-25)
+
+| Milestone | Code | Verified so far | Still to verify (on a device) |
+|---|---|---|---|
+| M0 Foundations | done | backend: owner role, `AdminOnly`=admin+owner, role validation 400, mobile 30-day token vs 12h web; cashier→403 on order cancel | login on emulator; owner/admin/cashier routing |
+| M1 Dashboard | done | analyzer + model unit tests | totals equal web dashboard for the same day |
+| M2 Orders/Reports | done | `/api/stats/trend` tested (30 rows, clamp 90); analyzer + tests | list/detail/cancel round-trip vs web; report + Z-Report totals vs web |
+| M3 Menu/Expenses | done | full dish + expense API flows via curl (create/update/toggle/photo/attachments/delete), test data removed | screens, camera/gallery, photo cache-busting |
+| M4 Push | not started | — | needs your Firebase project |
+| M5 Release | not started | — | needs Apple/Google developer accounts |
+
+**Backend changes made in Phase 2 so far:** `Roles` (owner/admin/cashier) + `OwnerOnly` policy; `AdminOnly` now admin+owner; user-create role validation; `client:"mobile"` login → `Jwt:MobileExpiryHours` (default 30 days); `GET /api/stats/trend`; `PATCH /api/orders/{id}/cancel` now `AdminOnly`. Angular: owner treated as admin; "Owner" option in Users.
+
+**Dev environment notes (Windows box):** `flutter.bat` needs PowerShell (blocked by group policy) — `bin/internal/shared.bat` in the SDK was locally patched to skip the engine-version PowerShell check (backup: `shared.bat.orig`); `flutter doctor` still reports missing Android cmdline-tools/licences; the Gradle build failed with "Unable to establish loopback connection" in the assistant's sandbox (retry from your own terminal, or build on the Mac).
+
+**Next steps:** (1) run M0–M3 on an emulator/simulator and fix anything found; (2) create a Firebase project → M4; (3) decide whether to restrict `/api/purchases` writes and `GET /api/orders` to admin/owner (currently any authenticated user); (4) then M5 release prep.
 
 ## Goal
 

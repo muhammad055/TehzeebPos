@@ -61,6 +61,8 @@ Phase 1 is now functionally complete except for the actual VPS provisioning/depl
 
 ## Phase 2 — Owner/Manager App (Flutter)
 
+**Status (2026-09-25): M0–M3 coded and pushed, not yet run on a device; M4–M5 pending. Detailed plan + progress: `ProjectPlanMobile.md`.**
+
 **Goal**: the mobile experience the owner described — check the restaurant at 11 PM without sitting in it. Built directly on top of Phase 1 (cloud-hosted, multi-tenant, JWT-authenticated API) with **no functional changes to the web app** yet — the mobile app mirrors what already exists (sales, orders, reports) rather than waiting for the profit/food-cost analytics in Phase 3.
 
 1. New Flutter project, hitting the Phase 1 API (JWT auth, tenant-scoped) — no backend duplication. Add a couple of lightweight `/api/mobile/summary`-style endpoints tuned for home-screen tiles if the general-purpose `/api/stats` response ends up too heavy for a phone.
