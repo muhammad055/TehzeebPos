@@ -29,7 +29,7 @@
                   {{ u.username }}
                   <span class="um-self-tag" *ngIf="isSelf(u)">you</span>
                 </div>
-                <span class="nav-role-badge" [class.role-admin]="u.role === 'admin'">{{ u.role }}</span>
+                <span class="nav-role-badge" [class.role-admin]="u.role === 'admin' || u.role === 'owner'">{{ u.role }}</span>
               </div>
             </div>
 
@@ -87,6 +87,7 @@
         <select [(ngModel)]="newUser.role" name="new_role" class="um-select">
           <option value="cashier">Cashier</option>
           <option value="admin">Admin</option>
+          <option value="owner">Owner</option>
         </select>
 
         <div class="um-form-error" *ngIf="createError">{{ createError }}</div>

@@ -6,7 +6,7 @@ import { environment } from '../environments/environment';
 export interface AuthUser {
   token: string;
   username: string;
-  role: 'admin' | 'cashier';
+  role: 'owner' | 'admin' | 'cashier';
 }
 
 @Injectable({ providedIn: 'root' })
@@ -38,7 +38,8 @@ export class AuthService {
   }
 
   isAdmin(): boolean {
-    return this.getUser()?.role === 'admin';
+    const role = this.getUser()?.role;
+    return role === 'admin' || role === 'owner';
   }
 
   logout() {

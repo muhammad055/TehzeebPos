@@ -25,6 +25,8 @@ var jwtSecret   = builder.Configuration["Jwt:Secret"]
 var jwtIssuer   = builder.Configuration["Jwt:Issuer"] ?? "TehzeebPos";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "TehzeebPosClients";
 var jwtExpiryHours = double.TryParse(builder.Configuration["Jwt:ExpiryHours"], out var eh) ? eh : 12;
+// Phones stay signed in far longer than a cashier terminal; no refresh-token flow yet.
+var jwtMobileExpiryHours = double.TryParse(builder.Configuration["Jwt:MobileExpiryHours"], out var meh) ? meh : 24 * 30;
 
 builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseNpgsql(builder.Configuration.GetConnectionString("Default")
@@ -56,7 +58,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorizationBuilder()
-    .AddPolicy("AdminOnly", p => p.RequireRole("admin"));
+    .AddPolicy("AdminOnly", p => p.RequireRole(Roles.Admin, Roles.Owner))
+    .AddPolicy("OwnerOnly", p => p.RequireRole(Roles.Owner));
 
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<PrintAgentRegistry>();
@@ -157,7 +160,8 @@ app.MapPost("/api/auth/login", async (LoginDto dto, AppDbContext db) =>
     var user = await db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(
         u => u.Username == dto.Username && u.Password == hashed);
     if (user is null) return Results.Unauthorized();
-    var token = IssueToken(user, jwtSecret, jwtIssuer, jwtAudience, jwtExpiryHours);
+    var hours = dto.Client == "mobile" ? jwtMobileExpiryHours : jwtExpiryHours;
+    var token = IssueToken(user, jwtSecret, jwtIssuer, jwtAudience, hours);
     return Results.Ok(new { token, username = user.Username, role = user.Role });
 });
 
@@ -169,6 +173,8 @@ app.MapGet("/api/users", async (AppDbContext db) =>
 
 app.MapPost("/api/users", async (CreateUserDto dto, AppDbContext db, ICurrentTenant tenant) =>
 {
+    if (!Roles.IsValid(dto.Role))
+        return Results.BadRequest(new { message = $"Role must be one of: {string.Join(", ", Roles.All)}." });
     if (await db.Users.AnyAsync(u => u.Username == dto.Username))
         return Results.Conflict(new { message = "Username already exists." });
     var user = new User { RestaurantId = tenant.RestaurantId!.Value, Username = dto.Username, Password = HashPassword(dto.Password), Role = dto.Role };
@@ -1038,7 +1044,16 @@ public class PurchaseAttachment
 public record DishDto(string Name, decimal Price, decimal TaxRate, string? PrintName = null, decimal? DoublePrice = null, decimal? ThirdPrice = null, string? PricingScheme = null);
 public record ToggleAllDto(bool IsActive);
 public record SettingDto(string Value);
-public record LoginDto(string Username, string Password);
+public record LoginDto(string Username, string Password, string? Client = null);
+
+public static class Roles
+{
+    public const string Owner   = "owner";
+    public const string Admin   = "admin";
+    public const string Cashier = "cashier";
+    public static readonly string[] All = { Owner, Admin, Cashier };
+    public static bool IsValid(string? role) => role is not null && All.Contains(role);
+}
 public record CreateUserDto(string Username, string Password, string Role);
 public record ChangePasswordDto(string Password);
 public record CreateOrderItemDto(int DishId, string DishName, int Quantity, decimal UnitPrice, decimal LineTotal);

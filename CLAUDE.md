@@ -81,6 +81,13 @@ Printing goes through `IPrintDispatcher` (`backend/PrintDispatch.cs`) rather tha
   - **`backend/PosApi.csproj`**: had to add `<Content Update="appsettings.Development.json"><CopyToPublishDirectory>Never</CopyToPublishDirectory></Content>` — discovered that `dotnet publish` was including the dev-only file (weak hardcoded JWT secret, dev Postgres credentials) in every publish output, including this desktop installer. Applies to cloud VPS publishes too, not just desktop.
   - Verified end-to-end with a real `npm run dist` build (145MB installer) run standalone with a fresh `--user-data-dir`: Postgres initializes and starts, backend connects/migrates/seeds a fresh restaurant, login issues a correct JWT, the Angular SPA and its static assets serve correctly, and a dish write persists. `desktop/scripts/build.js` needed no changes — it already just publishes the backend and copies the Angular build; the new logic all lives in `main.js`/`package.json`.
 
+## Mobile app (`mobile/`, SaaS Phase 2 — in progress)
+
+One Flutter app (Android + iOS), role-gated Owner/Manager modes. Full plan + milestone checklist: `ProjectPlanMobile.md` (overall roadmap: `ProjectPlan.md`). Setup/run: `mobile/README.md`.
+- **Roles** are now `owner | admin | cashier` (`Roles` class in `backend/Program.cs`). `AdminOnly` policy = admin **or** owner; `OwnerOnly` exists for future use. `POST /api/users` rejects other role values (400). Angular `isAdmin()` treats owner as admin.
+- `POST /api/auth/login` accepts optional `"client":"mobile"` → token lifetime `Jwt:MobileExpiryHours` (default 30 days) instead of `Jwt:ExpiryHours` (12h). No refresh-token flow yet.
+- M0 Flutter code was written on a Windows box without Flutter — **not yet compiled**; run `flutter create .` inside `mobile/` first (see its README).
+
 ## Backend architecture highlights
 
 - **SPA serving**: `app.UseDefaultFiles()` + `app.MapFallbackToFile("index.html")` — the backend serves the built Angular app directly from its own `wwwroot`, so the packaged desktop app runs from a single origin (`http://localhost:5050`), no separate frontend server needed in production.
