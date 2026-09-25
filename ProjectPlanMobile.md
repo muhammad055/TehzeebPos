@@ -51,7 +51,7 @@ The app **mirrors what already exists on the web** (sales, orders, reports, purc
 ## Milestones
 
 - [~] **M0 – Foundations** — backend done & verified (owner role, `AdminOnly`=admin+owner, `OwnerOnly`, role validation → 400, mobile login `client:"mobile"` → 30-day token vs 12h web, Angular Users "Owner" option). Flutter code written (dio client + 401 logout, secure storage, login, go_router role guard, owner/manager shell, cashier blocked). **Remaining on the Mac:** `flutter create .` to generate `android/`/`ios/`, `flutter pub get && flutter analyze`, run on a simulator, commit platform folders. Dart flavors deferred (using `--dart-define=API_BASE_URL`).
-- [ ] **M1 – Owner dashboard**: tiles + 7-day chart from `/api/stats`, pull-to-refresh. Totals must equal the web dashboard for the same day.
+- [~] **M1 – Owner dashboard** — code written (not yet compiled/run): `features/dashboard/` (Stats model + unit test, `statsProvider`, tiles for today/week/month, 7-day bar chart via fl_chart, top items, pull-to-refresh, error/retry), drawer shell in `HomeScreen`. **To verify on the Mac:** totals equal the web dashboard for the same day. 30-day trend chart deferred (needs a backend range endpoint; `/api/stats` only returns 7 days).
 - [ ] **M2 – Orders & Reports**: order list by date, detail, cancel (admin); reports with date range + dish filter; Z-report view; `/api/mobile/summary` if needed.
 - [ ] **M3 – Manager ops**: menu management (CRUD, toggle, toggle-all, photo upload); expenses list/add/edit with camera attachments.
 - [ ] **M4 – Push notifications**: Firebase project, `DeviceToken` migration + endpoints, daily-summary push, deep link to dashboard. `google-services.json` / `GoogleService-Info.plist` are gitignored.

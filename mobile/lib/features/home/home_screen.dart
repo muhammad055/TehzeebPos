@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/auth.dart';
+import '../dashboard/dashboard_screen.dart';
 
-/// Role-based shell. M0 only proves the gating; real screens land in M1+:
+/// Role-based shell. The dashboard is live (M1); the other sections land in
+/// later milestones:
 ///   Owner   → Dashboard, Orders, Reports, Expenses (read), Menu
-///   Manager → Dashboard-lite, Orders (+cancel), Purchases, Reports, Menu management
+///   Manager → Dashboard, Orders (+cancel), Purchases, Reports, Menu management
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -16,9 +18,9 @@ class HomeScreen extends ConsumerWidget {
 
     final isOwner = session.role == Role.owner;
     final title = isOwner ? 'Owner' : 'Manager';
-    final sections = isOwner
-        ? ['Dashboard', 'Orders', 'Reports', 'Expenses', 'Menu']
-        : ['Dashboard', 'Orders', 'Purchases', 'Reports', 'Menu management'];
+    final upcoming = isOwner
+        ? ['Orders', 'Reports', 'Expenses', 'Menu']
+        : ['Orders', 'Purchases', 'Reports', 'Menu management'];
 
     return Scaffold(
       appBar: AppBar(
@@ -31,16 +33,26 @@ class HomeScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: ListView(
-        children: [
-          for (final s in sections)
-            ListTile(
-              title: Text(s),
-              subtitle: const Text('Coming in a later milestone'),
-              enabled: false,
-            ),
-        ],
+      drawer: Drawer(
+        child: SafeArea(
+          child: ListView(
+            children: [
+              const ListTile(
+                leading: Icon(Icons.dashboard_outlined),
+                title: Text('Dashboard'),
+                selected: true,
+              ),
+              for (final s in upcoming)
+                ListTile(
+                  title: Text(s),
+                  subtitle: const Text('Coming soon'),
+                  enabled: false,
+                ),
+            ],
+          ),
+        ),
       ),
+      body: const DashboardScreen(),
     );
   }
 }
