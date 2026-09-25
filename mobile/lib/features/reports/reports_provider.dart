@@ -41,22 +41,6 @@ final reportProvider = FutureProvider.autoDispose<Report>((ref) async {
   }
 });
 
-/// Menu list for the dish filter.
-final dishesProvider = FutureProvider.autoDispose<List<Dish>>((ref) async {
-  final dio = ref.watch(apiClientProvider);
-  try {
-    final res = await dio.get('/dishes');
-    final list = [
-      for (final d in res.data as List) Dish.fromJson(d as Map<String, dynamic>)
-    ];
-    list.sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
-    return list;
-  } on DioException catch (e) {
-    if (e.response?.statusCode == 401) rethrow;
-    throw Exception('Could not load the menu.');
-  }
-});
-
 final zReportProvider = FutureProvider.autoDispose<ZReport>((ref) async {
   final dio = ref.watch(apiClientProvider);
   try {

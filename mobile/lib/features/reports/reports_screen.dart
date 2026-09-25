@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/format.dart';
+import '../menu/menu_provider.dart';
 import 'reports_provider.dart';
 
 class ReportsScreen extends ConsumerWidget {

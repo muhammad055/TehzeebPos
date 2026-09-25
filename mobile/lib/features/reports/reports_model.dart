@@ -1,23 +1,5 @@
 /// Mirrors `GET /api/reports` and `GET /api/z-report` (backend/Program.cs).
 /// Cancelled orders are already excluded server-side.
-class Dish {
-  const Dish({required this.id, required this.name, this.printName});
-
-  final int id;
-  final String name;
-  final String? printName;
-
-  /// English name if there is one — reports are read at a glance, and the
-  /// phone may not have an Urdu font until we bundle one.
-  String get label => (printName != null && printName!.isNotEmpty) ? printName! : name;
-
-  factory Dish.fromJson(Map<String, dynamic> j) => Dish(
-        id: (j['id'] as num).toInt(),
-        name: j['name'] as String? ?? '',
-        printName: j['printName'] as String?,
-      );
-}
-
 class ItemBreakdown {
   const ItemBreakdown({required this.dishId, required this.dishName, required this.qtySold, required this.revenue});
 

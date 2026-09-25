@@ -5,10 +5,9 @@ import 'package:go_router/go_router.dart';
 import '../../core/auth.dart';
 import '../dashboard/dashboard_screen.dart';
 
-/// Role-based shell. Dashboard (M1), Orders / Reports / Z-Report (M2) are live;
-/// the rest land in later milestones:
-///   Owner   → + Expenses (read), Menu
-///   Manager → + Purchases, Menu management
+/// Role-based shell. Dashboard (M1), Orders / Reports / Z-Report (M2) and
+/// Menu / Expenses management (M3) are live. Owner and manager currently get
+/// the same screens — the server's `AdminOnly` policy already treats them alike.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -19,7 +18,6 @@ class HomeScreen extends ConsumerWidget {
 
     final isOwner = session.role == Role.owner;
     final title = isOwner ? 'Owner' : 'Manager';
-    final upcoming = isOwner ? ['Expenses', 'Menu'] : ['Purchases', 'Menu management'];
 
     void open(String route) {
       Navigator.of(context).pop(); // close the drawer
@@ -61,12 +59,16 @@ class HomeScreen extends ConsumerWidget {
                 title: const Text('Z-Report'),
                 onTap: () => open('/z-report'),
               ),
-              for (final s in upcoming)
-                ListTile(
-                  title: Text(s),
-                  subtitle: const Text('Coming soon'),
-                  enabled: false,
-                ),
+              ListTile(
+                leading: const Icon(Icons.restaurant_menu_outlined),
+                title: const Text('Menu'),
+                onTap: () => open('/menu'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.payments_outlined),
+                title: const Text('Expenses'),
+                onTap: () => open('/expenses'),
+              ),
             ],
           ),
         ),

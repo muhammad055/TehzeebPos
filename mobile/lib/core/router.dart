@@ -3,7 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/auth/login_screen.dart';
+import '../features/expenses/expense_form_screen.dart';
+import '../features/expenses/expenses_screen.dart';
 import '../features/home/home_screen.dart';
+import '../features/menu/dish_form_screen.dart';
+import '../features/menu/menu_screen.dart';
 import '../features/home/not_allowed_screen.dart';
 import '../features/orders/order_detail_screen.dart';
 import '../features/orders/orders_screen.dart';
@@ -44,6 +48,20 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/orders/:id',
         builder: (_, state) =>
             OrderDetailScreen(orderId: int.parse(state.pathParameters['id']!)),
+      ),
+      GoRoute(path: '/menu', builder: (_, __) => const MenuScreen()),
+      // '/menu/new' must be declared before '/menu/:id'.
+      GoRoute(path: '/menu/new', builder: (_, __) => const DishFormScreen()),
+      GoRoute(
+        path: '/menu/:id',
+        builder: (_, state) => DishFormScreen(dishId: int.parse(state.pathParameters['id']!)),
+      ),
+      GoRoute(path: '/expenses', builder: (_, __) => const ExpensesScreen()),
+      GoRoute(path: '/expenses/new', builder: (_, __) => const ExpenseFormScreen()),
+      GoRoute(
+        path: '/expenses/:id',
+        builder: (_, state) =>
+            ExpenseFormScreen(purchaseId: int.parse(state.pathParameters['id']!)),
       ),
       GoRoute(path: '/reports', builder: (_, __) => const ReportsScreen()),
       GoRoute(path: '/z-report', builder: (_, __) => const ZReportScreen()),
