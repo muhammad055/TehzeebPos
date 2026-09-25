@@ -104,7 +104,7 @@ One Flutter app (Android + iOS), role-gated Owner/Manager modes. Full plan + mil
 ## Data model highlights
 
 - **Dish**: `Name` (display name — can be Urdu), `PrintName` (English fallback used on receipts, since ESC/POS output is ASCII-only and silently drops non-ASCII chars), `Price` (tier 1), `DoublePrice` (tier 2, nullable), `ThirdPrice` (tier 3, nullable, only meaningful for `QuarterHalfFull` scheme), `PricingScheme` (`"SingleDouble"` | `"QuarterHalfFull"` | null≈`SingleDouble`). Sales-screen cart buttons are S/D or Q/H/F depending on scheme, shown only when `DoublePrice` is set.
-- **Order**: `IsCancelled`/`CancelledAt`/`CancelReason` — soft-cancel (never hard-deleted), excluded from `/api/stats`, `/api/reports`, and both Z-Report endpoints, but still visible in Order History for audit. Cancel via `PATCH /api/orders/{id}/cancel`, admin-only screen.
+- **Order**: `IsCancelled`/`CancelledAt`/`CancelReason` — soft-cancel (never hard-deleted), excluded from `/api/stats`, `/api/reports`, and both Z-Report endpoints, but still visible in Order History for audit. Cancel via `PATCH /api/orders/{id}/cancel`, admin-only screen and (since Phase 2) `AdminOnly` on the server too — a cashier token gets 403.
 - **Purchase (Expenses)**: supports multiple photo attachments via `PurchaseAttachment` (one-to-many, `POST/DELETE /api/purchases/{id}/attachments[/{attachmentId}]`). Legacy single `Purchase.ImagePath` kept for backward compat (auto-backfilled into `PurchaseAttachment` on first migration run) but the attachments list is the current source of truth.
 
 ## Frontend highlights

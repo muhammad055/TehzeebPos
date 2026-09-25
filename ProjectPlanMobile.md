@@ -69,7 +69,7 @@ Each milestone gets its own go-ahead before work starts.
 ## Risks / open items
 
 - No refresh-token flow yet (long-lived token stopgap).
-- **Server gap found in M2**: `PATCH /api/orders/{id}/cancel` (and `GET /api/orders`) only require *any* authenticated user, not `AdminOnly` — a cashier token can cancel orders via the API even though the web/mobile UIs hide it. Pre-existing from Phase 1; not changed (no-functional-change mandate) — decide whether to tighten.
+- ~~Server gap found in M2~~ **Fixed**: `PATCH /api/orders/{id}/cancel` is now `AdminOnly` (admin + owner). Cashier token → 403 (verified). `GET /api/orders` still allows any authenticated user.
 - Apple Developer account ($99/yr) and Google Play Console ($25 one-time) needed for release; iOS builds require the Mac.
 - Cloud-only: phone needs internet; no offline mode.
 - Login is still a **global username lookup** (single tenant). Before onboarding a second restaurant it must become unique per `(RestaurantId, Username)` with a restaurant selector — the mobile login UI will need it too.

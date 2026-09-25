@@ -507,7 +507,7 @@ app.MapPatch("/api/orders/{id:int}/cancel", async (int id, CancelOrderDto dto, A
     order.CancelReason = string.IsNullOrWhiteSpace(dto.Reason) ? null : dto.Reason.Trim();
     await db.SaveChangesAsync();
     return Results.Ok(order);
-}).RequireAuthorization();
+}).RequireAuthorization("AdminOnly");
 
 app.MapPost("/api/orders", async (CreateOrderDto dto, AppDbContext db, ICurrentTenant tenant) =>
 {
