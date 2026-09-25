@@ -48,7 +48,7 @@ class DashboardScreen extends ConsumerWidget {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
           children: [
-            _SectionTitle('Today'),
+            const _SectionTitle('Today'),
             _TileGrid(tiles: [
               _Tile('Sales', aed.format(s.todaySales)),
               _Tile('Orders', '${s.todayOrderCount}'),
@@ -57,14 +57,14 @@ class DashboardScreen extends ConsumerWidget {
               _Tile('Profit', aed.format(s.todayProfit), signed: s.todayProfit),
             ]),
             const SizedBox(height: 20),
-            _SectionTitle('This week'),
+            const _SectionTitle('This week'),
             _TileGrid(tiles: [
               _Tile('Sales', aed.format(s.weekSales)),
               _Tile('Expenses', aed.format(s.weekExpenses)),
               _Tile('Profit', aed.format(s.weekProfit), signed: s.weekProfit),
             ]),
             const SizedBox(height: 20),
-            _SectionTitle('This month'),
+            const _SectionTitle('This month'),
             _TileGrid(tiles: [
               _Tile('Sales', aed.format(s.monthSales)),
               _Tile('Expenses', aed.format(s.monthExpenses)),
@@ -73,7 +73,7 @@ class DashboardScreen extends ConsumerWidget {
             const SizedBox(height: 20),
             _TrendSection(last7: s.last7Days),
             const SizedBox(height: 20),
-            _SectionTitle('Top items'),
+            const _SectionTitle('Top items'),
             _TopItems(items: s.topItems),
           ],
         ),
@@ -199,7 +199,7 @@ class _TrendSectionState extends ConsumerState<_TrendSection> {
       children: [
         Row(
           children: [
-            Expanded(child: _SectionTitle('Sales trend')),
+            const Expanded(child: _SectionTitle('Sales trend')),
             SegmentedButton<int>(
               showSelectedIcon: false,
               segments: const [

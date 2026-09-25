@@ -52,7 +52,7 @@ class ReportsScreen extends ConsumerWidget {
             ]),
             const SizedBox(height: 12),
             DropdownButtonFormField<int?>(
-              value: filter.dishId,
+              initialValue: filter.dishId,
               isExpanded: true,
               decoration: const InputDecoration(labelText: 'Dish', isDense: true),
               items: [

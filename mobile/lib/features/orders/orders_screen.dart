@@ -40,7 +40,7 @@ class OrdersScreen extends ConsumerWidget {
       body: RefreshIndicator(
         onRefresh: () async {
           ref.invalidate(ordersProvider);
-          await ref.read(ordersProvider.future).catchError((_) => const []);
+          await ref.read(ordersProvider.future).then((_) {}, onError: (_) {});
         },
         child: orders.when(
           loading: () => const Center(child: CircularProgressIndicator()),

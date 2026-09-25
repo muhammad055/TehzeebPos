@@ -2,25 +2,26 @@
 
 Flutter owner/manager app. Roadmap: [`../ProjectPlanMobile.md`](../ProjectPlanMobile.md).
 
-## First-time setup (once per machine)
+## Setup
 
-The `android/` and `ios/` platform folders are **not committed yet** — the M0 scaffold was
-written on a machine without Flutter installed. Generate them in place (keeps existing `lib/` and `pubspec.yaml`):
+Platform folders (`android/`, `ios/`) are committed and `flutter analyze` is clean. On a new machine:
 
 ```bash
 cd mobile
-flutter create --org com.tehzeeb --project-name tehzeeb_mobile .
 flutter pub get
-flutter analyze
+flutter analyze && flutter test
 ```
 
-Then commit the generated `android/`, `ios/`, and `test/` folders (`.gitignore` already excludes build output and local files).
+Cleartext HTTP to the local dev backend is already allowed for **debug builds only**
+(`android/app/src/debug/AndroidManifest.xml`, `NSAllowsLocalNetworking` in `ios/Runner/Info.plist`).
+Release builds must use an HTTPS `API_BASE_URL`.
 
-### Allow plain-HTTP to the local backend (dev only)
+**iOS on the Mac:** open `ios/Runner.xcworkspace` in Xcode once, select a Team under Signing & Capabilities
+(bundle id `com.tehzeeb.tehzeebMobile`), then `cd ios && pod install` if CocoaPods hasn't run.
 
-- **Android**: in `android/app/src/main/AndroidManifest.xml`, add `android:usesCleartextTraffic="true"` to `<application>` (better: put it in a debug-only manifest at `android/app/src/debug/AndroidManifest.xml`). Production uses HTTPS.
-- **iOS simulator**: add to `ios/Runner/Info.plist`
-  `<key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>`.
+**Windows dev box note:** if `flutter.bat` fails with "blocked by group policy" it is calling PowerShell.
+Run the tool directly instead: `dart.exe --disable-dart-dev <flutter>/bin/cache/flutter_tools.snapshot <args>`
+with `FLUTTER_ROOT` set.
 
 ## Run against the local backend
 
