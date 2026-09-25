@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/api_client.dart';
 import 'stats_model.dart';
@@ -14,5 +15,25 @@ final statsProvider = FutureProvider.autoDispose<Stats>((ref) async {
   } on DioException catch (e) {
     if (e.response?.statusCode == 401) rethrow; // interceptor already signs out
     throw Exception('Could not load the dashboard. Check your connection.');
+  }
+});
+
+/// Daily sales for the last [days] UAE days (`/api/stats/trend`), oldest first.
+/// Dates are reformatted to "Sep 24" to match the 7-day series in `/api/stats`.
+final trendProvider =
+    FutureProvider.autoDispose.family<List<DayTotal>, int>((ref, days) async {
+  final dio = ref.watch(apiClientProvider);
+  try {
+    final res = await dio.get('/stats/trend', queryParameters: {'days': days});
+    return [
+      for (final p in res.data as List)
+        DayTotal(
+          date: DateFormat('MMM dd').format(DateTime.parse((p as Map)['date'] as String)),
+          total: (p['total'] as num).toDouble(),
+        )
+    ];
+  } on DioException catch (e) {
+    if (e.response?.statusCode == 401) rethrow;
+    throw Exception('Could not load the trend. Check your connection.');
   }
 });

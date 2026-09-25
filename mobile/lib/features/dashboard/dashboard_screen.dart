@@ -3,10 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/format.dart';
 import 'dashboard_provider.dart';
 import 'stats_model.dart';
 
-final _aed = NumberFormat.currency(symbol: 'AED ', decimalDigits: 2);
 final _aedShort = NumberFormat.compact();
 
 class DashboardScreen extends ConsumerWidget {
@@ -50,29 +50,28 @@ class DashboardScreen extends ConsumerWidget {
           children: [
             _SectionTitle('Today'),
             _TileGrid(tiles: [
-              _Tile('Sales', _aed.format(s.todaySales)),
+              _Tile('Sales', aed.format(s.todaySales)),
               _Tile('Orders', '${s.todayOrderCount}'),
-              _Tile('Avg order', _aed.format(s.todayAvgOrder)),
-              _Tile('Expenses', _aed.format(s.todayExpenses)),
-              _Tile('Profit', _aed.format(s.todayProfit), signed: s.todayProfit),
+              _Tile('Avg order', aed.format(s.todayAvgOrder)),
+              _Tile('Expenses', aed.format(s.todayExpenses)),
+              _Tile('Profit', aed.format(s.todayProfit), signed: s.todayProfit),
             ]),
             const SizedBox(height: 20),
             _SectionTitle('This week'),
             _TileGrid(tiles: [
-              _Tile('Sales', _aed.format(s.weekSales)),
-              _Tile('Expenses', _aed.format(s.weekExpenses)),
-              _Tile('Profit', _aed.format(s.weekProfit), signed: s.weekProfit),
+              _Tile('Sales', aed.format(s.weekSales)),
+              _Tile('Expenses', aed.format(s.weekExpenses)),
+              _Tile('Profit', aed.format(s.weekProfit), signed: s.weekProfit),
             ]),
             const SizedBox(height: 20),
             _SectionTitle('This month'),
             _TileGrid(tiles: [
-              _Tile('Sales', _aed.format(s.monthSales)),
-              _Tile('Expenses', _aed.format(s.monthExpenses)),
-              _Tile('Profit', _aed.format(s.monthProfit), signed: s.monthProfit),
+              _Tile('Sales', aed.format(s.monthSales)),
+              _Tile('Expenses', aed.format(s.monthExpenses)),
+              _Tile('Profit', aed.format(s.monthProfit), signed: s.monthProfit),
             ]),
             const SizedBox(height: 20),
-            _SectionTitle('Last 7 days'),
-            _SalesChart(days: s.last7Days),
+            _TrendSection(last7: s.last7Days),
             const SizedBox(height: 20),
             _SectionTitle('Top items'),
             _TopItems(items: s.topItems),
@@ -171,9 +170,59 @@ class _TileGrid extends StatelessWidget {
   }
 }
 
+/// 7-day (from /api/stats) / 30-day (from /api/stats/trend) sales toggle.
+class _TrendSection extends ConsumerStatefulWidget {
+  const _TrendSection({required this.last7});
+  final List<DayTotal> last7;
+
+  @override
+  ConsumerState<_TrendSection> createState() => _TrendSectionState();
+}
+
+class _TrendSectionState extends ConsumerState<_TrendSection> {
+  int _days = 7;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget chart = _days == 7
+        ? _SalesChart(days: widget.last7)
+        : ref.watch(trendProvider(_days)).when(
+              loading: () => const SizedBox(
+                  height: 200, child: Center(child: CircularProgressIndicator())),
+              error: (e, _) => SizedBox(
+                  height: 200,
+                  child: Center(child: Text(e.toString().replaceFirst('Exception: ', '')))),
+              data: (d) => _SalesChart(days: d, dense: true),
+            );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: _SectionTitle('Sales trend')),
+            SegmentedButton<int>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: 7, label: Text('7d')),
+                ButtonSegment(value: 30, label: Text('30d')),
+              ],
+              selected: {_days},
+              onSelectionChanged: (v) => setState(() => _days = v.first),
+            ),
+          ],
+        ),
+        chart,
+      ],
+    );
+  }
+}
+
 class _SalesChart extends StatelessWidget {
-  const _SalesChart({required this.days});
+  const _SalesChart({required this.days, this.dense = false});
   final List<DayTotal> days;
+
+  /// 30-day mode: thinner bars, and only every 5th date label.
+  final bool dense;
 
   @override
   Widget build(BuildContext context) {
@@ -195,7 +244,7 @@ class _SalesChart extends StatelessWidget {
               barTouchData: BarTouchData(
                 touchTooltipData: BarTouchTooltipData(
                   getTooltipItem: (group, _, rod, __) => BarTooltipItem(
-                    '${days[group.x].date}\n${_aed.format(rod.toY)}',
+                    '${days[group.x].date}\n${aed.format(rod.toY)}',
                     TextStyle(color: scheme.onInverseSurface, fontSize: 12),
                   ),
                 ),
@@ -221,6 +270,7 @@ class _SalesChart extends StatelessWidget {
                       final i = v.toInt();
                       if (i < 0 || i >= days.length) return const SizedBox.shrink();
                       // "Sep 24" → "24" keeps 7 labels readable on a phone.
+                      if (dense && i % 5 != 0) return const SizedBox.shrink();
                       final label = days[i].date.split(' ').last;
                       return Padding(
                         padding: const EdgeInsets.only(top: 6),
@@ -236,7 +286,7 @@ class _SalesChart extends StatelessWidget {
                     BarChartRodData(
                       toY: days[i].total,
                       color: scheme.primary,
-                      width: 18,
+                      width: dense ? 5 : 18,
                       borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
                     ),
                   ]),
@@ -270,7 +320,7 @@ class _TopItems extends StatelessWidget {
               leading: CircleAvatar(radius: 14, child: Text('${i + 1}')),
               title: Text(it.name, maxLines: 1, overflow: TextOverflow.ellipsis),
               subtitle: Text('${it.quantity} sold'),
-              trailing: Text(_aed.format(it.revenue)),
+              trailing: Text(aed.format(it.revenue)),
             ),
         ],
       ),

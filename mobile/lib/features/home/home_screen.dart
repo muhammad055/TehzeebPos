@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/auth.dart';
 import '../dashboard/dashboard_screen.dart';
 
-/// Role-based shell. The dashboard is live (M1); the other sections land in
-/// later milestones:
-///   Owner   → Dashboard, Orders, Reports, Expenses (read), Menu
-///   Manager → Dashboard, Orders (+cancel), Purchases, Reports, Menu management
+/// Role-based shell. Dashboard (M1), Orders / Reports / Z-Report (M2) are live;
+/// the rest land in later milestones:
+///   Owner   → + Expenses (read), Menu
+///   Manager → + Purchases, Menu management
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -18,9 +19,12 @@ class HomeScreen extends ConsumerWidget {
 
     final isOwner = session.role == Role.owner;
     final title = isOwner ? 'Owner' : 'Manager';
-    final upcoming = isOwner
-        ? ['Orders', 'Reports', 'Expenses', 'Menu']
-        : ['Orders', 'Purchases', 'Reports', 'Menu management'];
+    final upcoming = isOwner ? ['Expenses', 'Menu'] : ['Purchases', 'Menu management'];
+
+    void open(String route) {
+      Navigator.of(context).pop(); // close the drawer
+      context.push(route);
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -41,6 +45,21 @@ class HomeScreen extends ConsumerWidget {
                 leading: Icon(Icons.dashboard_outlined),
                 title: Text('Dashboard'),
                 selected: true,
+              ),
+              ListTile(
+                leading: const Icon(Icons.receipt_long_outlined),
+                title: const Text('Orders'),
+                onTap: () => open('/orders'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.bar_chart_outlined),
+                title: const Text('Reports'),
+                onTap: () => open('/reports'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.summarize_outlined),
+                title: const Text('Z-Report'),
+                onTap: () => open('/z-report'),
               ),
               for (final s in upcoming)
                 ListTile(

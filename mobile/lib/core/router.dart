@@ -5,6 +5,10 @@ import 'package:go_router/go_router.dart';
 import '../features/auth/login_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/home/not_allowed_screen.dart';
+import '../features/orders/order_detail_screen.dart';
+import '../features/orders/orders_screen.dart';
+import '../features/reports/reports_screen.dart';
+import '../features/reports/zreport_screen.dart';
 import 'auth.dart';
 
 /// Role-based route guard. Signed-out → /login; cashier → /not-allowed
@@ -35,6 +39,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
       GoRoute(path: '/not-allowed', builder: (_, __) => const NotAllowedScreen()),
       GoRoute(path: '/home', builder: (_, __) => const HomeScreen()),
+      GoRoute(path: '/orders', builder: (_, __) => const OrdersScreen()),
+      GoRoute(
+        path: '/orders/:id',
+        builder: (_, state) =>
+            OrderDetailScreen(orderId: int.parse(state.pathParameters['id']!)),
+      ),
+      GoRoute(path: '/reports', builder: (_, __) => const ReportsScreen()),
+      GoRoute(path: '/z-report', builder: (_, __) => const ZReportScreen()),
     ],
   );
 });

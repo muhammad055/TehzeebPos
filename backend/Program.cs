@@ -406,6 +406,34 @@ app.MapGet("/api/stats", async (AppDbContext db) =>
     });
 }).RequireAuthorization();
 
+// Daily sales totals for the last N UAE days (oldest first, zero-filled) — feeds
+// the mobile dashboard's 7/30-day trend toggle. Same basis as /api/stats
+// (non-cancelled orders, GrandTotal, UTC+4 days).
+app.MapGet("/api/stats/trend", async (AppDbContext db, int? days) =>
+{
+    var n = Math.Clamp(days ?? 30, 1, 90);
+    var uaeOffset = TimeSpan.FromHours(4);
+    var today     = (DateTime.UtcNow + uaeOffset).Date;
+    var firstDay  = today.AddDays(-(n - 1));
+    var fromUtc   = firstDay - uaeOffset;
+
+    var orders = await db.Orders
+        .Where(o => !o.IsCancelled && o.OrderDate >= fromUtc)
+        .Select(o => new { o.OrderDate, o.GrandTotal })
+        .ToListAsync();
+
+    var byDay = orders
+        .GroupBy(o => (o.OrderDate + uaeOffset).Date)
+        .ToDictionary(g => g.Key, g => g.Sum(o => o.GrandTotal));
+
+    var result = Enumerable.Range(0, n).Select(i =>
+    {
+        var d = firstDay.AddDays(i);
+        return new { date = d.ToString("yyyy-MM-dd"), total = byDay.GetValueOrDefault(d, 0m) };
+    });
+    return Results.Ok(result);
+}).RequireAuthorization("AdminOnly");
+
 // ─── REPORTS ────────────────────────────────────────────────────────────────
 
 app.MapGet("/api/reports", async (AppDbContext db, string? from, string? to, int? dishId) =>
