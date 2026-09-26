@@ -1,12 +1,16 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api_client.dart';
 import '../../core/format.dart';
 import 'order_model.dart';
 
-/// Selected calendar day (UAE) on the Orders screen; starts at today.
-final ordersDateProvider = StateProvider.autoDispose<DateTime>((ref) => uaeToday());
+/// Selected date range (UAE calendar days, inclusive) on the Orders screen; starts at today.
+final ordersRangeProvider = StateProvider.autoDispose<DateTimeRange>((ref) {
+  final t = uaeToday();
+  return DateTimeRange(start: t, end: t);
+});
 
 String _friendly(DioException e, String what) {
   final msg = e.response?.data is Map ? (e.response!.data as Map)['message'] : null;
@@ -15,9 +19,10 @@ String _friendly(DioException e, String what) {
 
 final ordersProvider = FutureProvider.autoDispose<List<PosOrder>>((ref) async {
   final dio = ref.watch(apiClientProvider);
-  final date = ref.watch(ordersDateProvider);
+  final range = ref.watch(ordersRangeProvider);
   try {
-    final res = await dio.get('/orders', queryParameters: {'date': apiDate(date)});
+    final res = await dio.get('/orders',
+        queryParameters: {'from': apiDate(range.start), 'to': apiDate(range.end)});
     return [
       for (final o in res.data as List) PosOrder.fromJson(o as Map<String, dynamic>)
     ];

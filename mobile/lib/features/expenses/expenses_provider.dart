@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -69,6 +70,10 @@ Future<String?> saveExpense(
   required double amount,
   required String category,
   List<Uint8List> photos = const [],
+
+  /// Itemised lines. Non-empty: the server sets the total to their sum. Empty on an
+  /// edit: existing lines are removed. Null: lines are left as they are.
+  List<BillLineInput>? lines,
 }) async {
   final dio = ref.read(apiClientProvider);
   // The backend reads these as multipart form fields, not JSON.
@@ -78,6 +83,8 @@ Future<String?> saveExpense(
     'description': description,
     'totalAmount': amount.toString(),
     'category': category,
+    if (lines != null && (lines.isNotEmpty || existingId != null))
+      'items': jsonEncode([for (final l in lines) l.toJson()]),
   });
   try {
     int id;

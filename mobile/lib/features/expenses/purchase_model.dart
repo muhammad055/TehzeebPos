@@ -21,6 +21,45 @@ class Attachment {
       Attachment(id: (j['id'] as num).toInt(), imagePath: j['imagePath'] as String? ?? '');
 }
 
+/// One itemised line on a bill (backend `PurchaseItem`). Name and unit are snapshots.
+class BillLine {
+  const BillLine({
+    required this.itemId,
+    required this.itemName,
+    required this.unit,
+    required this.quantity,
+    required this.unitPrice,
+    required this.lineTotal,
+  });
+
+  final int itemId;
+  final String itemName;
+  final String unit;
+  final double quantity;
+  final double unitPrice;
+  final double lineTotal;
+
+  factory BillLine.fromJson(Map<String, dynamic> j) => BillLine(
+        itemId: (j['itemId'] as num).toInt(),
+        itemName: j['itemName'] as String? ?? '',
+        unit: j['unit'] as String? ?? '',
+        quantity: (j['quantity'] as num? ?? 0).toDouble(),
+        unitPrice: (j['unitPrice'] as num? ?? 0).toDouble(),
+        lineTotal: (j['lineTotal'] as num? ?? 0).toDouble(),
+      );
+}
+
+/// A line as sent to the server when saving a bill.
+class BillLineInput {
+  const BillLineInput({required this.itemId, required this.quantity, required this.unitPrice});
+
+  final int itemId;
+  final double quantity;
+  final double unitPrice;
+
+  Map<String, dynamic> toJson() => {'itemId': itemId, 'quantity': quantity, 'unitPrice': unitPrice};
+}
+
 class Purchase {
   const Purchase({
     required this.id,
@@ -30,6 +69,7 @@ class Purchase {
     required this.totalAmount,
     required this.category,
     required this.attachments,
+    this.items = const [],
   });
 
   final int id;
@@ -42,6 +82,9 @@ class Purchase {
   final double totalAmount;
   final String category;
   final List<Attachment> attachments;
+
+  /// Itemised bill lines; empty for older bills that only have a total.
+  final List<BillLine> items;
 
   factory Purchase.fromJson(Map<String, dynamic> j) {
     final raw = (j['date'] as String? ?? '').split('T').first;
@@ -59,6 +102,10 @@ class Purchase {
       attachments: [
         for (final a in (j['attachments'] as List? ?? const []))
           Attachment.fromJson(a as Map<String, dynamic>)
+      ],
+      items: [
+        for (final i in (j['items'] as List? ?? const []))
+          BillLine.fromJson(i as Map<String, dynamic>)
       ],
     );
   }

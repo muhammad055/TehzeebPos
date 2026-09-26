@@ -7,8 +7,32 @@ import '../../core/format.dart';
 import 'expenses_provider.dart';
 import 'purchase_model.dart';
 
-class ExpensesScreen extends ConsumerWidget {
-  const ExpensesScreen({super.key});
+/// [initialFrom]/[initialTo] (yyyy-MM-dd) preset the date range, e.g. when opened from the
+/// dashboard's expense tiles.
+class ExpensesScreen extends ConsumerStatefulWidget {
+  const ExpensesScreen({super.key, this.initialFrom, this.initialTo});
+  final String? initialFrom;
+  final String? initialTo;
+
+  @override
+  ConsumerState<ExpensesScreen> createState() => _ExpensesScreenState();
+}
+
+class _ExpensesScreenState extends ConsumerState<ExpensesScreen> {
+  @override
+  void initState() {
+    super.initState();
+    final from = DateTime.tryParse(widget.initialFrom ?? '');
+    final to = DateTime.tryParse(widget.initialTo ?? '');
+    if (from != null && to != null && !to.isBefore(from)) {
+      // Not during build: providers can't be modified while the tree is building.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(expenseFilterProvider.notifier).state =
+            ExpenseFilter(range: DateTimeRange(start: from, end: to));
+      });
+    }
+  }
 
   Future<void> _pickRange(BuildContext context, WidgetRef ref) async {
     final f = ref.read(expenseFilterProvider);
@@ -25,7 +49,7 @@ class ExpensesScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final filter = ref.watch(expenseFilterProvider);
     final expenses = ref.watch(expensesProvider);
     final fmt = DateFormat('d MMM');
@@ -113,7 +137,11 @@ class ExpensesScreen extends ConsumerWidget {
                           subtitle: Text([
                             DateFormat('d MMM').format(p.date),
                             p.category,
-                            if (p.description.isNotEmpty) p.description,
+                            if (p.items.isNotEmpty)
+                              p.items.take(2).map((i) => i.itemName).join(', ') +
+                                  (p.items.length > 2 ? ' +${p.items.length - 2}' : '')
+                            else if (p.description.isNotEmpty)
+                              p.description,
                           ].join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis),
                           trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                             if (p.attachments.isNotEmpty) ...[

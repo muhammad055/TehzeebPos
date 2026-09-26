@@ -21,6 +21,20 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/images/
+
+# App icon: `dart run flutter_launcher_icons` regenerates the Android and iOS
+# icons from assets/icon/ (source: backend/wwwroot/TL.png, a 74px logo — swap in
+# a higher-resolution logo for release).
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/icon/icon.png
+  remove_alpha_ios: true
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: assets/icon/icon_foreground.png

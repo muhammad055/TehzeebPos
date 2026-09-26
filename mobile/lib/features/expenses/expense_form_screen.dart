@@ -8,6 +8,9 @@ import 'package:intl/intl.dart';
 import '../../core/format.dart';
 import '../../shared/network_thumb.dart';
 import '../../shared/photo_picker.dart';
+import '../../core/theme.dart';
+import '../inventory/inventory_model.dart';
+import '../inventory/inventory_provider.dart';
 import 'expenses_provider.dart';
 import 'purchase_model.dart';
 
@@ -29,6 +32,7 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
   late DateTime _date = uaeToday();
   String _category = expenseCategories.first;
   final List<Uint8List> _newPhotos = [];
+  final List<_LineCtl> _lines = [];
   bool _loaded = false;
   bool _saving = false;
 
@@ -45,6 +49,9 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
     _supplier.dispose();
     _description.dispose();
     _amount.dispose();
+    for (final l in _lines) {
+      l.dispose();
+    }
     super.dispose();
   }
 
@@ -57,6 +64,63 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
         : '${p.totalAmount}';
     // Keep unknown/legacy categories selectable instead of silently changing them.
     _category = p.category;
+    for (final i in p.items) {
+      _lines.add(_LineCtl(itemId: i.itemId, quantity: qty(i.quantity), price: qty(i.unitPrice)));
+    }
+  }
+
+  double get _linesTotal => _lines.fold<double>(0, (s, l) => s + l.total);
+
+  void _addLine() => setState(() => _lines.add(_LineCtl()));
+
+  void _removeLine(int i) => setState(() => _lines.removeAt(i).dispose());
+
+  Future<void> _newItem(int lineIndex) async {
+    final name = TextEditingController();
+    var unit = 'kg';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: const Text('New item'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+              controller: name,
+              autofocus: true,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(labelText: 'Name', hintText: 'e.g. Chicken'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: unit,
+              decoration: const InputDecoration(labelText: 'Unit'),
+              items: [for (final u in stockUnits) DropdownMenuItem(value: u, child: Text(u))],
+              onChanged: (u) => setD(() => unit = u ?? unit),
+            ),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(
+              style: FilledButton.styleFrom(minimumSize: const Size(90, 44)),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final entered = name.text.trim();
+    name.dispose();
+    if (ok != true || entered.isEmpty) return;
+    final r = await createItem(ref, entered, unit);
+    if (!mounted) return;
+    if (r.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(r.error!)));
+      return;
+    }
+    setState(() {
+      if (lineIndex < _lines.length) _lines[lineIndex].itemId = r.item!.id;
+    });
   }
 
   List<String> get _categoryOptions =>
@@ -79,6 +143,13 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    for (final l in _lines) {
+      if (l.itemId == null || l.quantity <= 0 || l.price < 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Each item needs an item, a quantity above 0 and a price.')));
+        return;
+      }
+    }
     setState(() => _saving = true);
     final err = await saveExpense(
       ref,
@@ -86,9 +157,13 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       date: _date,
       supplier: _supplier.text.trim(),
       description: _description.text.trim(),
-      amount: double.parse(_amount.text.trim()),
+      amount: _lines.isNotEmpty ? _linesTotal : double.parse(_amount.text.trim()),
       category: _category,
       photos: _newPhotos,
+      // Editing always sends the lines (even none) so removed lines are removed on the server.
+      lines: _lines.isEmpty && !_isEdit
+          ? null
+          : [for (final l in _lines) BillLineInput(itemId: l.itemId!, quantity: l.quantity, unitPrice: l.price)],
     );
     if (!mounted) return;
     setState(() => _saving = false);
@@ -152,6 +227,8 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
       }
     }
 
+    final itemOptions = ref.watch(itemsProvider).valueOrNull ?? const <Item>[];
+
     return Scaffold(
       appBar: AppBar(
         title: Text(_isEdit ? 'Edit expense' : 'Add expense'),
@@ -175,16 +252,23 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
               label: Text(DateFormat('EEE, d MMM y').format(_date)),
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _amount,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Amount (AED)'),
-              validator: (v) {
-                final n = double.tryParse((v ?? '').trim());
-                if (n == null) return 'Enter an amount';
-                return n <= 0 ? 'Must be more than 0' : null;
-              },
-            ),
+            if (_lines.isEmpty)
+              TextFormField(
+                controller: _amount,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Amount (AED)'),
+                validator: (v) {
+                  final n = double.tryParse((v ?? '').trim());
+                  if (n == null) return 'Enter an amount';
+                  return n <= 0 ? 'Must be more than 0' : null;
+                },
+              )
+            else
+              InputDecorator(
+                decoration: const InputDecoration(labelText: 'Total (AED) — sum of the items below'),
+                child: Text(aed.format(_linesTotal),
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               initialValue: _category,
@@ -202,6 +286,25 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
               controller: _description,
               maxLines: 2,
               decoration: const InputDecoration(labelText: 'Description'),
+            ),
+            const SizedBox(height: 20),
+            Text('Items on this bill', style: Theme.of(context).textTheme.titleMedium),
+            const Text('Optional — lets the app track stock',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+            const SizedBox(height: 8),
+            for (final (i, l) in _lines.indexed)
+              _LineCard(
+                key: ObjectKey(l),
+                line: l,
+                items: itemOptions,
+                onChanged: () => setState(() {}),
+                onNewItem: () => _newItem(i),
+                onRemove: _saving ? null : () => _removeLine(i),
+              ),
+            OutlinedButton.icon(
+              onPressed: _saving ? null : _addLine,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Add item'),
             ),
             const SizedBox(height: 20),
             Text('Receipts', style: Theme.of(context).textTheme.titleMedium),
@@ -242,6 +345,115 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Editable state for one bill line.
+class _LineCtl {
+  _LineCtl({this.itemId, String quantity = '', String price = ''})
+      : qtyCtl = TextEditingController(text: quantity),
+        priceCtl = TextEditingController(text: price);
+
+  int? itemId;
+  final TextEditingController qtyCtl;
+  final TextEditingController priceCtl;
+
+  double get quantity => double.tryParse(qtyCtl.text.trim()) ?? 0;
+  double get price => double.tryParse(priceCtl.text.trim()) ?? 0;
+  double get total => quantity * price;
+
+  void dispose() {
+    qtyCtl.dispose();
+    priceCtl.dispose();
+  }
+}
+
+class _LineCard extends StatelessWidget {
+  const _LineCard({
+    super.key,
+    required this.line,
+    required this.items,
+    required this.onChanged,
+    required this.onNewItem,
+    required this.onRemove,
+  });
+
+  final _LineCtl line;
+  final List<Item> items;
+  final VoidCallback onChanged;
+  final VoidCallback onNewItem;
+  final VoidCallback? onRemove;
+
+  static const _newItemValue = -1;
+
+  @override
+  Widget build(BuildContext context) {
+    final unit = items.where((i) => i.id == line.itemId).map((i) => i.unit).firstOrNull ?? '';
+    // The item may be inactive (hidden from the list) but still on an older bill.
+    final known = line.itemId == null || items.any((i) => i.id == line.itemId);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(children: [
+          Row(children: [
+            Expanded(
+              child: DropdownButtonFormField<int>(
+                key: ValueKey('${line.hashCode}-${line.itemId}-${items.length}'),
+                initialValue: known ? line.itemId : null,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Item', isDense: true),
+                items: [
+                  for (final i in items) DropdownMenuItem(value: i.id, child: Text('${i.name} (${i.unit})')),
+                  const DropdownMenuItem(value: _newItemValue, child: Text('＋ New item…')),
+                ],
+                onChanged: (v) {
+                  if (v == _newItemValue) {
+                    onNewItem();
+                  } else {
+                    line.itemId = v;
+                    onChanged();
+                  }
+                },
+              ),
+            ),
+            IconButton(
+              tooltip: 'Remove item',
+              icon: const Icon(Icons.close_rounded, color: AppColors.danger),
+              onPressed: onRemove,
+            ),
+          ]),
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(
+              child: TextField(
+                controller: line.qtyCtl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                onChanged: (_) => onChanged(),
+                decoration: InputDecoration(labelText: 'Quantity', isDense: true, suffixText: unit),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                controller: line.priceCtl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                onChanged: (_) => onChanged(),
+                decoration: const InputDecoration(labelText: 'Price / unit', isDense: true, prefixText: 'AED '),
+              ),
+            ),
+          ]),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text('Line total  ${aed.format(line.total)}',
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ]),
       ),
     );
   }

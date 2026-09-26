@@ -6,6 +6,7 @@ import '../features/auth/login_screen.dart';
 import '../features/expenses/expense_form_screen.dart';
 import '../features/expenses/expenses_screen.dart';
 import '../features/home/home_screen.dart';
+import '../features/inventory/inventory_screen.dart';
 import '../features/menu/dish_form_screen.dart';
 import '../features/menu/menu_screen.dart';
 import '../features/home/not_allowed_screen.dart';
@@ -56,13 +57,20 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/menu/:id',
         builder: (_, state) => DishFormScreen(dishId: int.parse(state.pathParameters['id']!)),
       ),
-      GoRoute(path: '/expenses', builder: (_, __) => const ExpensesScreen()),
+      GoRoute(
+        path: '/expenses',
+        builder: (_, state) => ExpensesScreen(
+          initialFrom: state.uri.queryParameters['from'],
+          initialTo: state.uri.queryParameters['to'],
+        ),
+      ),
       GoRoute(path: '/expenses/new', builder: (_, __) => const ExpenseFormScreen()),
       GoRoute(
         path: '/expenses/:id',
         builder: (_, state) =>
             ExpenseFormScreen(purchaseId: int.parse(state.pathParameters['id']!)),
       ),
+      GoRoute(path: '/inventory', builder: (_, __) => const InventoryScreen()),
       GoRoute(path: '/reports', builder: (_, __) => const ReportsScreen()),
       GoRoute(path: '/z-report', builder: (_, __) => const ZReportScreen()),
     ],

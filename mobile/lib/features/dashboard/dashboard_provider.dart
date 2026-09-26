@@ -37,3 +37,24 @@ final trendProvider =
     throw Exception('Could not load the trend. Check your connection.');
   }
 });
+
+/// Daily sales for an explicit UAE date range (`from`/`to` are yyyy-MM-dd, inclusive).
+final trendRangeProvider =
+    FutureProvider.autoDispose.family<List<DayTotal>, ({String from, String to})>((ref, r) async {
+  final dio = ref.watch(apiClientProvider);
+  try {
+    final res = await dio.get('/stats/trend', queryParameters: {'from': r.from, 'to': r.to});
+    return [
+      for (final p in res.data as List)
+        DayTotal(
+          date: DateFormat('MMM dd').format(DateTime.parse((p as Map)['date'] as String)),
+          total: (p['total'] as num).toDouble(),
+        )
+    ];
+  } on DioException catch (e) {
+    if (e.response?.statusCode == 401) rethrow;
+    final data = e.response?.data;
+    if (data is String && data.isNotEmpty && data.length < 120) throw Exception(data);
+    throw Exception('Could not load the trend. Check your connection.');
+  }
+});
