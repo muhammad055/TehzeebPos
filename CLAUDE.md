@@ -9,7 +9,7 @@ backend/       ASP.NET Core 8 Minimal API — everything lives in Program.cs (si
                PostgreSQL via Npgsql + real EF Core Migrations (Migrations/ folder) —
                replaced the old raw ALTER TABLE/pragma_table_info SQLite pattern as
                part of the SaaS Phase 1 cloud migration (see "Multi-tenancy & auth"
-               below). Local dev Postgres: `docker compose up -d` in backend/.
+               below). Local dev Postgres: `docker compose up -d` in backend/ (Rancher Desktop provides docker on the Mac).
 frontend-ng/   Angular 17 standalone app (esbuild-based "application" builder).
 desktop/       Electron wrapper that packages backend+frontend into a Windows
                desktop installer. See "Desktop packaging" below — NOTE: not yet
@@ -17,6 +17,8 @@ desktop/       Electron wrapper that packages backend+frontend into a Windows
 ```
 
 Default login: `admin`/`admin123` (admin role), `cashier`/`cashier123` (cashier role) — unchanged.
+
+**Restoring real data locally:** the real menu (73 dishes, real password hashes, settings) lives in a `pg_dump` from the original machine, not in git; restore with `docker cp` + `pg_restore --clean --if-exists --no-owner`. Dish photos come from `backend/wwwroot/uploads/dishes/dish-<id>.jpg` (gitignored); the repo's `menu-photos-for-delivery/` matches the 73 dishes 1:1 by print name and was used to rebuild them locally.
 
 Dev workflow: `docker compose up -d` (backend/docker-compose.yml, first time only) →
 `dotnet run --urls "http://localhost:5050"` in `backend/` (applies pending migrations
@@ -66,6 +68,19 @@ changes**, just real server-side security:
 
 **Gotcha**: `dotnet build`/`dotnet run` fails with a file-lock error if a previous backend instance is still running. Find and kill it first: `tasklist | grep -i posapi` then `taskkill //PID <pid> //F`. If that returns "Access is denied" (seen on this machine — likely an EDR/group-policy process-protection rule blocking scripted termination), build with `-c Release` instead — it writes to `bin/Release/...`, a different path than the locked `bin/Debug/...` exe, so it's unaffected — and ask the human to close the stuck process themselves (Task Manager / Ctrl+C in its terminal).
 
+## Inventory & stock tracking (built 2026-09-26)
+
+Answers "are we over-using ingredients?" as a stock ledger per item: **expected stock = last physical count + bought since − used since**. A count that disagrees with expected is stored as a variance (negative = shortage, valued at the item's average purchase price). All code is in `backend/Inventory.cs` (entities, endpoints, `ComputePositions`), mapped from `Program.cs` via `app.MapInventoryEndpoints()`; migration `AddInventory`.
+- **Tables**: `Item` (name + one unit from `kg,g,L,ml,pcs,dozen,pack` — no unit conversions), `PurchaseItem` (bill lines, snapshot of item name/unit, cascade from `Purchase`), `StockUsage` (one row per date+item, batch upsert), `StockCount` (one row per date+item; stores `ExpectedQty` snapshot + `Variance`). Dates are calendar dates as UTC midnight, like `Purchase.Date`.
+- **Bills**: the existing multipart `POST/PUT /api/purchases` takes an optional `items` form field (JSON `[{itemId,quantity,unitPrice}]`). With lines the server sets `TotalAmount` to their sum and ignores the posted total; item-less bills behave exactly as before, so `/api/stats` expenses are unchanged. `PUT` with an `items` field (even `[]`) replaces the lines.
+- **Access**: `GET /api/items`, usage and count endpoints are open to every signed-in role (a kitchen person can use a `cashier`-role login on the web); items writes, `GET /api/stock/on-hand` and `/api/stock/report` are `AdminOnly`. Non-admins are deliberately shown no expected-stock figures, so a count can't be steered towards what the system expects.
+- **Baseline rule**: latest count before the date (counts on the date itself only for the on-hand view); bills and usage after the baseline date up to the date are applied. No count yet = baseline 0, so **enter an opening stock count first** for each item.
+- **Web**: `/stock` (Stock Entry: daily usage + stock count, any role), `/inventory` (admin: stock on hand, report, items), line-items table + inline "new item" in the Expenses form. **Mobile** (`mobile/lib/features/inventory/` + line items in `features/expenses/expense_form_screen.dart`): drawer → Inventory (tabs On hand / Entry [usage + count] / Report) and an "Items on this bill" section in the expense form with inline "New item…". Mobile is owner/admin only, so kitchen entry there needs an admin login; a kitchen person uses the web `/stock` page. Unit-tested models (`test/inventory_models_test.dart`), analyzer-clean; run on a device only after restarting the backend on the new code.
+- **Pack sizes** (`ItemPack`, migration `AddItemPacks`): an item keeps one base unit (chicken = `pcs`, birds) plus named packs that convert to it ("Packet of 10 birds" = 10). A bill line is either loose (`quantity`+`unitPrice` per base unit) or by pack (`packId`+`packs`+`packPrice`); the server converts (2 packets x 10 = 20 pcs; `LineTotal` = packs x pack price, `UnitPrice` derived) and snapshots pack name/count/price, so resizing a pack later never changes old bills. Packs: `POST/PUT/DELETE /api/items/{id}/packs[/{packId}]` (AdminOnly; delete = hide if on a bill); `POST /api/items` may include `packs`. Web: Inventory → Items has a per-item pack manager and the expense form shows a packet picker with a live "= 20 pcs" line. **Mobile bill form does not yet offer packs** (loose lines only).
+- `GET /api/stats/trend` accepts `from`+`to` (UAE days, inclusive, max 366) as well as `days`.
+- `dotnet-ef` is a global tool (`dotnet tool install --global dotnet-ef --version 8.0.10`; binary in `~/.dotnet/tools`).
+- Verified 2026-09-26 with a 39-check API script (incl. tenant isolation, role 403s, upserts, the 10 bought / 7 used / counted 0 → −3 kg scenario) and by driving the real web screens; test rows were removed afterwards.
+
 ## Local Print Agent (`print-agent/`) — desktop + cloud coexistence
 
 Printing goes through `IPrintDispatcher` (`backend/PrintDispatch.cs`) rather than calling `RawPrinterHelper` directly, so **one backend binary** serves both deployment modes, switched by `Printing:Mode` config:
@@ -86,8 +101,9 @@ Printing goes through `IPrintDispatcher` (`backend/PrintDispatch.cs`) rather tha
 One Flutter app (Android + iOS), role-gated Owner/Manager modes. Full plan + milestone checklist: `ProjectPlanMobile.md` (overall roadmap: `ProjectPlan.md`). Setup/run: `mobile/README.md`.
 - **Roles** are now `owner | admin | cashier` (`Roles` class in `backend/Program.cs`). `AdminOnly` policy = admin **or** owner; `OwnerOnly` exists for future use. `POST /api/users` rejects other role values (400). Angular `isAdmin()` treats owner as admin.
 - `POST /api/auth/login` accepts optional `"client":"mobile"` → token lifetime `Jwt:MobileExpiryHours` (default 30 days) instead of `Jwt:ExpiryHours` (12h). No refresh-token flow yet.
-- Status: M0–M3 (login/role routing, dashboard + 7/30-day trend, orders/cancel, reports, Z-report, menu management, expenses) are coded, analyzer-clean and unit-tested, and the backend calls were verified by curl — but **the app has not yet been run on a device/emulator**. Platform folders (`android/`, `ios/`) are committed. M4 (push) and M5 (release) not started. Details: `ProjectPlanMobile.md`.
+- Status (2026-09-26): M0–M3 are coded **and have been run on a real iPhone 13** (login, dashboard, orders, expenses, inventory, redesigned UI: lavender theme from the web tokens, food-photo login, gold accents on login only, app icon from `TL.png`). Not every screen has been exercised end-to-end on the device yet — the app is analyzer-clean with 14 model unit tests. M4 (push) and M5 (release) not started. Details: `ProjectPlanMobile.md`.
 - Windows dev box: `flutter.bat` needs PowerShell (blocked by group policy); the SDK's `shared.bat` was locally patched — see `mobile/README.md` and `ProjectPlanMobile.md`.
+- **Mac dev setup (2026-09-26, Intel MacBook Pro 16" 2019, macOS 26.6.2):** Flutter 3.47.5 in `~/Developer/flutter` (not on the PATH in scripts — call `~/Developer/flutter/bin/flutter`); Xcode 26.6 *Universal* build (the Apple-silicon-only build won't run on this Mac); CocoaPods 1.17 installed as a **user gem** (`gem install cocoapods --user-install`, needs `PATH=$HOME/.gem/ruby/2.6.0/bin:$PATH` and `LANG=en_US.UTF-8`; the system 1.11.3 can't parse Swift-package project files); Homebrew does not support Intel Macs any more so it is not used; `flutter config --no-enable-swift-package-manager` and `flutter config --jdk-dir <JDK 17>` are set; Android SDK 36 installed. Flutter warns that Intel Mac support is being deprecated. Install on the iPhone with `flutter run --release -d <device-id> --dart-define=API_BASE_URL=http://<mac-hostname>.local:5050/api` — use the **`.local` hostname, not an IP** (the router hands out new IPs) and keep the phone unlocked; debug runs failed on iOS 26 with 'Timed out waiting for CONFIGURATION_BUILD_DIR', release runs work. The backend must listen on all interfaces: `dotnet run --urls "http://0.0.0.0:5050"`, and **restart it after backend changes** (a stale process silently ignores new query params and 404s new endpoints).
 - `PATCH /api/orders/{id}/cancel` is `AdminOnly`; `GET /api/stats/trend` added.
 
 ## Backend architecture highlights

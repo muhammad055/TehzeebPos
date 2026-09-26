@@ -70,6 +70,12 @@ Phase 1 is now functionally complete except for the actual VPS provisioning/depl
 3. Push notifications (Firebase Cloud Messaging) — initially basic (e.g. daily summary), with richer threshold alerts ("food cost 4.2% over target") added once Phase 3's analytics exist.
 4. Manager should be able to manage dishes, update, add, delete, enable/disbale dishes
 
+## Progress since the last update (2026-09-26)
+
+- **Phase 2 (mobile)**: M0–M3 now run on a real iPhone; UI redesigned; orders date-range + summary; dashboard drill-down to expenses and custom trend range. M4/M5 still to do. See `ProjectPlanMobile.md`.
+- **Inventory / stock tracking (pulled forward from Phase 5, on the owner's request — over-use of ingredients such as chicken)**: built end to end on backend + web, partly on mobile. Stock ledger per item (expected = last count + bought − used), itemised bills with **pack sizes** (2 packets × 10 birds = 20 pcs), day-end usage entry, physical counts with variance/shortage valuation, stock-on-hand and report screens. Not yet built: sales-based deductions for portion dishes (kadahi Q/H/F, tikka), recipes, supplier management, waste tracking, the simplified big-button Urdu-friendly kitchen screen.
+- **Phase 1 leftovers**: VPS deployment still manual/pending.
+
 ## Phase 3 — Profit/Expense/Food-Cost Analytics
 
 **Goal**: ship the "actual profit instead of gross sales" feature on top of the now-multi-tenant, mobile-accessible platform, in both the existing Angular admin/reports screens and the Flutter app from Phase 2.
