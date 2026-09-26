@@ -409,16 +409,32 @@ app.MapGet("/api/stats", async (AppDbContext db) =>
 // Daily sales totals for the last N UAE days (oldest first, zero-filled) — feeds
 // the mobile dashboard's 7/30-day trend toggle. Same basis as /api/stats
 // (non-cancelled orders, GrandTotal, UTC+4 days).
-app.MapGet("/api/stats/trend", async (AppDbContext db, int? days) =>
+app.MapGet("/api/stats/trend", async (AppDbContext db, int? days, string? from, string? to) =>
 {
-    var n = Math.Clamp(days ?? 30, 1, 90);
     var uaeOffset = TimeSpan.FromHours(4);
     var today     = (DateTime.UtcNow + uaeOffset).Date;
-    var firstDay  = today.AddDays(-(n - 1));
-    var fromUtc   = firstDay - uaeOffset;
+
+    DateTime firstDay;
+    int n;
+    // A custom range (from + to, inclusive, UAE calendar days, up to a year) wins over "last N days".
+    if (DateOnly.TryParse(from, out var fd) && DateOnly.TryParse(to, out var td))
+    {
+        firstDay = new DateTime(fd.Year, fd.Month, fd.Day);
+        var lastDay = new DateTime(td.Year, td.Month, td.Day);
+        if (lastDay < firstDay) return Results.BadRequest("'to' is before 'from'.");
+        n = (int)(lastDay - firstDay).TotalDays + 1;
+        if (n > 366) return Results.BadRequest("Pick a range of one year or less.");
+    }
+    else
+    {
+        n = Math.Clamp(days ?? 30, 1, 90);
+        firstDay = today.AddDays(-(n - 1));
+    }
+    var fromUtc  = firstDay - uaeOffset;
+    var untilUtc = firstDay.AddDays(n) - uaeOffset;
 
     var orders = await db.Orders
-        .Where(o => !o.IsCancelled && o.OrderDate >= fromUtc)
+        .Where(o => !o.IsCancelled && o.OrderDate >= fromUtc && o.OrderDate < untilUtc)
         .Select(o => new { o.OrderDate, o.GrandTotal })
         .ToListAsync();
 
@@ -766,7 +782,7 @@ app.MapGet("/api/printer-agent/status", (PrintAgentRegistry registry, ICurrentTe
 
 app.MapGet("/api/purchases", async (AppDbContext db, string? from, string? to, string? category) =>
 {
-    var query = db.Purchases.Include(p => p.Attachments).AsQueryable();
+    var query = db.Purchases.Include(p => p.Attachments).Include(p => p.Items).AsQueryable();
 
     if (!string.IsNullOrEmpty(from) && DateOnly.TryParse(from, out var fd) &&
         !string.IsNullOrEmpty(to)   && DateOnly.TryParse(to,   out var td))
@@ -784,7 +800,7 @@ app.MapGet("/api/purchases", async (AppDbContext db, string? from, string? to, s
 
 app.MapGet("/api/purchases/{id:int}", async (int id, AppDbContext db) =>
 {
-    var p = await db.Purchases.Include(p => p.Attachments).FirstOrDefaultAsync(x => x.Id == id);
+    var p = await db.Purchases.Include(p => p.Attachments).Include(p => p.Items).FirstOrDefaultAsync(x => x.Id == id);
     return p is null ? Results.NotFound() : Results.Ok(p);
 }).RequireAuthorization();
 
@@ -793,8 +809,11 @@ app.MapPost("/api/purchases", async (HttpRequest request, AppDbContext db, ICurr
     if (!request.HasFormContentType) return Results.BadRequest("Expected multipart form.");
     var form = await request.ReadFormAsync();
 
-    if (!decimal.TryParse(form["totalAmount"], System.Globalization.NumberStyles.Any,
-            System.Globalization.CultureInfo.InvariantCulture, out var total))
+    var hasItems = form.ContainsKey("items") && form["items"].ToString().Length > 0;
+    decimal total = 0;
+    // With itemised lines the server computes the total; otherwise it's required as before.
+    if (!hasItems && !decimal.TryParse(form["totalAmount"], System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.InvariantCulture, out total))
         return Results.BadRequest("Invalid totalAmount.");
 
     var date = DateOnly.TryParse(form["date"].ToString(), out var parsedDate)
@@ -811,14 +830,20 @@ app.MapPost("/api/purchases", async (HttpRequest request, AppDbContext db, ICurr
         Category    = form["category"].ToString() is { Length: > 0 } cat ? cat : "General"
     };
 
+    if (hasItems)
+    {
+        var err = await Inventory.ApplyPurchaseLines(db, tenant, purchase, form["items"].ToString());
+        if (err is not null) return Results.BadRequest(err);
+    }
+
     db.Purchases.Add(purchase);
     await db.SaveChangesAsync();
     return Results.Created($"/api/purchases/{purchase.Id}", purchase);
 }).RequireAuthorization();
 
-app.MapPut("/api/purchases/{id:int}", async (int id, HttpRequest request, AppDbContext db) =>
+app.MapPut("/api/purchases/{id:int}", async (int id, HttpRequest request, AppDbContext db, ICurrentTenant tenant) =>
 {
-    var purchase = await db.Purchases.FirstOrDefaultAsync(p => p.Id == id);
+    var purchase = await db.Purchases.Include(p => p.Items).FirstOrDefaultAsync(p => p.Id == id);
     if (purchase is null) return Results.NotFound();
 
     if (!request.HasFormContentType) return Results.BadRequest("Expected multipart form.");
@@ -834,6 +859,13 @@ app.MapPut("/api/purchases/{id:int}", async (int id, HttpRequest request, AppDbC
     if (form["supplier"].ToString() is { Length: > 0 } s) purchase.Supplier = s;
     purchase.Description = form["description"].ToString();
     if (form["category"].ToString() is { Length: > 0 } cat2) purchase.Category = cat2;
+
+    // "items" present (even "[]") replaces the bill's lines; lines set the total.
+    if (form.ContainsKey("items"))
+    {
+        var err = await Inventory.ApplyPurchaseLines(db, tenant, purchase, form["items"].ToString() is { Length: > 0 } j ? j : "[]");
+        if (err is not null) return Results.BadRequest(err);
+    }
 
     await db.SaveChangesAsync();
     return Results.Ok(purchase);
@@ -890,7 +922,7 @@ app.MapDelete("/api/purchases/{id:int}/attachments/{attachmentId:int}", async (i
 
 app.MapDelete("/api/purchases/{id:int}", async (int id, AppDbContext db) =>
 {
-    var purchase = await db.Purchases.Include(p => p.Attachments).FirstOrDefaultAsync(x => x.Id == id);
+    var purchase = await db.Purchases.Include(p => p.Attachments).Include(p => p.Items).FirstOrDefaultAsync(x => x.Id == id);
     if (purchase is null) return Results.NotFound();
 
     foreach (var attachment in purchase.Attachments)
@@ -903,6 +935,8 @@ app.MapDelete("/api/purchases/{id:int}", async (int id, AppDbContext db) =>
     await db.SaveChangesAsync();
     return Results.NoContent();
 }).RequireAuthorization();
+
+app.MapInventoryEndpoints();
 
 // ─── SPA FALLBACK ───────────────────────────────────────────────────────────
 // Serves the built Angular app (copied into wwwroot at package time) for any
@@ -943,6 +977,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentTenant
     public DbSet<User> Users => Set<User>();
     public DbSet<Purchase> Purchases => Set<Purchase>();
     public DbSet<PurchaseAttachment> PurchaseAttachments => Set<PurchaseAttachment>();
+    public DbSet<Item> Items => Set<Item>();
+    public DbSet<ItemPack> ItemPacks => Set<ItemPack>();
+    public DbSet<PurchaseItem> PurchaseItems => Set<PurchaseItem>();
+    public DbSet<StockUsage> StockUsages => Set<StockUsage>();
+    public DbSet<StockCount> StockCounts => Set<StockCount>();
 
     // Every tenant-owned table is filtered to the caller's RestaurantId (from
     // the JWT) at the query level — a missed .Where() elsewhere in an
@@ -959,6 +998,20 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentTenant
         modelBuilder.Entity<User>().HasQueryFilter(x => tenant.RestaurantId == null || x.RestaurantId == tenant.RestaurantId);
         modelBuilder.Entity<Purchase>().HasQueryFilter(x => tenant.RestaurantId == null || x.RestaurantId == tenant.RestaurantId);
         modelBuilder.Entity<PurchaseAttachment>().HasQueryFilter(x => tenant.RestaurantId == null || x.RestaurantId == tenant.RestaurantId);
+        modelBuilder.Entity<Item>().HasQueryFilter(x => tenant.RestaurantId == null || x.RestaurantId == tenant.RestaurantId);
+        modelBuilder.Entity<ItemPack>().HasQueryFilter(x => tenant.RestaurantId == null || x.RestaurantId == tenant.RestaurantId);
+        modelBuilder.Entity<PurchaseItem>().HasQueryFilter(x => tenant.RestaurantId == null || x.RestaurantId == tenant.RestaurantId);
+        modelBuilder.Entity<StockUsage>().HasQueryFilter(x => tenant.RestaurantId == null || x.RestaurantId == tenant.RestaurantId);
+        modelBuilder.Entity<StockCount>().HasQueryFilter(x => tenant.RestaurantId == null || x.RestaurantId == tenant.RestaurantId);
+
+        // One usage row and one count per item per day (batch saves upsert).
+        modelBuilder.Entity<StockUsage>().HasIndex(x => new { x.RestaurantId, x.Date, x.ItemId }).IsUnique();
+        modelBuilder.Entity<StockCount>().HasIndex(x => new { x.RestaurantId, x.Date, x.ItemId }).IsUnique();
+        modelBuilder.Entity<Item>().HasIndex(x => new { x.RestaurantId, x.Name });
+        // Bills' lines are always read together with their parent purchase.
+        modelBuilder.Entity<ItemPack>().HasIndex(x => x.ItemId);
+        modelBuilder.Entity<PurchaseItem>().HasIndex(x => x.PurchaseId);
+        modelBuilder.Entity<PurchaseItem>().HasIndex(x => x.ItemId);
     }
 }
 
@@ -1056,6 +1109,7 @@ public class Purchase
     public string? ImagePath { get; set; }
     public string Category { get; set; } = "General";
     public List<PurchaseAttachment> Attachments { get; set; } = [];
+    public List<PurchaseItem> Items { get; set; } = [];
 }
 
 public class PurchaseAttachment

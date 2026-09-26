@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -10,9 +11,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace PosApi.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260926122655_AddInventory")]
+    partial class AddInventory
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -92,37 +95,6 @@ namespace PosApi.Migrations
                     b.HasIndex("RestaurantId", "Name");
 
                     b.ToTable("Items");
-                });
-
-            modelBuilder.Entity("ItemPack", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<int>("ItemId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<decimal>("Quantity")
-                        .HasColumnType("numeric");
-
-                    b.Property<int>("RestaurantId")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ItemId");
-
-                    b.ToTable("ItemPacks");
                 });
 
             modelBuilder.Entity("Order", b =>
@@ -290,19 +262,6 @@ namespace PosApi.Migrations
                         .HasColumnType("text");
 
                     b.Property<decimal>("LineTotal")
-                        .HasColumnType("numeric");
-
-                    b.Property<int?>("PackId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("PackName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<decimal?>("PackPrice")
-                        .HasColumnType("numeric");
-
-                    b.Property<decimal?>("Packs")
                         .HasColumnType("numeric");
 
                     b.Property<int>("PurchaseId")
@@ -493,15 +452,6 @@ namespace PosApi.Migrations
                     b.ToTable("Users");
                 });
 
-            modelBuilder.Entity("ItemPack", b =>
-                {
-                    b.HasOne("Item", null)
-                        .WithMany("Packs")
-                        .HasForeignKey("ItemId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("OrderItem", b =>
                 {
                     b.HasOne("Order", null)
@@ -527,11 +477,6 @@ namespace PosApi.Migrations
                         .HasForeignKey("PurchaseId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-                });
-
-            modelBuilder.Entity("Item", b =>
-                {
-                    b.Navigation("Packs");
                 });
 
             modelBuilder.Entity("Order", b =>
