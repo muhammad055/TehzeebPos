@@ -91,6 +91,7 @@
             </span>
             <span class="purch-date">{{ formatDate(p.date) }}</span>
           </div>
+          <p class="purch-items" *ngIf="p.items?.length">📦 {{ itemsSummary(p) }}</p>
           <p class="purch-desc" *ngIf="p.description">{{ p.description }}</p>
         </div>
 
@@ -128,11 +129,88 @@
           <textarea class="purch-textarea" [(ngModel)]="form.description"
                     placeholder="Short note about this expense…" rows="3"></textarea>
 
-          <label class="field-label">Total Amount (AED)</label>
+          <label class="field-label">Items on this bill <span class="field-optional">(optional — needed for stock tracking)</span></label>
+          <div class="bill-lines" *ngIf="lines.length">
+            <div class="bill-line" *ngFor="let l of lines; let i = index">
+              <div class="bill-line-pick">
+                <select [(ngModel)]="l.itemId" class="bill-line-item"
+                        (ngModelChange)="onItemPicked(i, $event)">
+                  <option [ngValue]="null" disabled>Choose item…</option>
+                  <option *ngFor="let it of items" [ngValue]="it.id">{{ it.name }}</option>
+                  <option [ngValue]="-1">＋ New item…</option>
+                </select>
+                <select *ngIf="l.itemId !== null" [(ngModel)]="l.packId" class="bill-line-pack"
+                        (ngModelChange)="onPackPicked(i, $event)">
+                  <option [ngValue]="null">Loose ({{ unitOf(l.itemId) }})</option>
+                  <option *ngFor="let pk of itemOf(l.itemId)?.packs" [ngValue]="pk.id">{{ pk.name }}</option>
+                  <option [ngValue]="-1">＋ New packet size…</option>
+                </select>
+                <button type="button" class="icon-btn danger" title="Remove item" (click)="removeLine(i)">✕</button>
+              </div>
+              <div class="bill-line-nums">
+                <div class="bill-field">
+                  <span class="bill-field-label">How many</span>
+                  <div class="input-group compact">
+                    <input type="number" [(ngModel)]="l.count" min="0" step="0.001" placeholder="0" style="margin-bottom:0" />
+                    <span class="input-suffix">{{ countLabel(l) }}</span>
+                  </div>
+                </div>
+                <div class="bill-field">
+                  <span class="bill-field-label">{{ priceLabel(l) }}</span>
+                  <div class="input-group compact">
+                    <span class="input-prefix">AED</span>
+                    <input type="number" [(ngModel)]="l.price" min="0" step="0.01" placeholder="0.00" style="margin-bottom:0" />
+                  </div>
+                </div>
+                <span class="bill-line-total">{{ lineTotal(l) | number:'1.2-2' }}</span>
+              </div>
+              <span class="bill-line-conv" *ngIf="convertedText(l)">{{ convertedText(l) }}</span>
+            </div>
+          </div>
+
+          <div class="bill-newitem card" *ngIf="showNewItem">
+            <label class="field-label">New item name</label>
+            <input type="text" [(ngModel)]="newItem.name" placeholder="e.g. Chicken" />
+            <label class="field-label">Counted in</label>
+            <select [(ngModel)]="newItem.unit">
+              <option *ngFor="let u of units" [value]="u">{{ u }}</option>
+            </select>
+            <label class="field-label">Usual packet <span class="field-optional">(optional)</span></label>
+            <input type="text" [(ngModel)]="newItem.packName" placeholder="e.g. Packet of 10 birds" />
+            <div class="input-group compact">
+              <input type="number" [(ngModel)]="newItem.packSize" min="0" step="0.001" placeholder="How many in one packet" style="margin-bottom:0" />
+              <span class="input-suffix">{{ newItem.unit }}</span>
+            </div>
+            <div class="btn-row" style="margin-top:10px">
+              <button type="button" class="btn btn-primary btn-sm" (click)="saveNewItem()" [disabled]="!newItem.name.trim()">Add item</button>
+              <button type="button" class="btn btn-ghost btn-sm" (click)="showNewItem = false">Cancel</button>
+            </div>
+          </div>
+
+          <div class="bill-newitem card" *ngIf="showNewPack">
+            <label class="field-label">New packet size for {{ itemOf(lines[newPackForLine]?.itemId ?? null)?.name }}</label>
+            <input type="text" [(ngModel)]="newPack.name" placeholder="e.g. Packet 1200 g" />
+            <div class="input-group compact">
+              <input type="number" [(ngModel)]="newPack.size" min="0" step="0.001" placeholder="How many in one packet" style="margin-bottom:0" />
+              <span class="input-suffix">{{ unitOf(lines[newPackForLine]?.itemId ?? null) }}</span>
+            </div>
+            <div class="btn-row" style="margin-top:10px">
+              <button type="button" class="btn btn-primary btn-sm" (click)="savePack()"
+                      [disabled]="!newPack.name.trim() || !newPack.size || newPack.size <= 0">Add packet size</button>
+              <button type="button" class="btn btn-ghost btn-sm" (click)="showNewPack = false">Cancel</button>
+            </div>
+          </div>
+
+          <button type="button" class="btn btn-outline btn-sm" (click)="addLine()">＋ Add item</button>
+
+          <label class="field-label">Total Amount (AED)
+            <span class="field-optional" *ngIf="hasLines">— sum of the items above</span>
+          </label>
           <div class="input-group compact">
             <span class="input-prefix">AED</span>
-            <input type="number" [(ngModel)]="form.totalAmount" min="0" step="0.01" placeholder="0.00"
+            <input *ngIf="!hasLines" type="number" [(ngModel)]="form.totalAmount" min="0" step="0.01" placeholder="0.00"
                    style="margin-bottom:0" />
+            <input *ngIf="hasLines" type="number" [value]="linesTotal" readonly style="margin-bottom:0" />
           </div>
 
           <label class="field-label" style="margin-top:4px">
@@ -157,7 +235,7 @@
           </div>
 
           <div class="btn-row">
-            <button class="btn btn-primary" style="flex:1" (click)="save()" [disabled]="saving || !form.supplier.trim() || form.totalAmount <= 0">
+            <button class="btn btn-primary" style="flex:1" (click)="save()" [disabled]="saving || !canSave">
               {{ saving ? 'Saving…' : (editingId ? 'Update' : 'Save Expense') }}
             </button>
             <button class="btn btn-ghost" (click)="cancelForm()">Cancel</button>

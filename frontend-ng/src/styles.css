@@ -2918,3 +2918,42 @@ input.i18n-dish-name,
 .dish-table td.i18n-dish-name {
   text-align: left;
 }
+
+/* ─── Itemised bills (expense form) ─────────────────────────────────────── */
+.purch-items { font-size: 12px; color: var(--text-muted); margin: 4px 0 0; line-height: 1.4; }
+.bill-lines { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+.bill-line {
+  display: flex; flex-direction: column; gap: 6px; padding: 10px;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 10px;
+}
+.bill-line select { margin-bottom: 0; }
+.bill-line-nums { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bill-line-nums .input-group { flex: 1; min-width: 110px; }
+.bill-line-total { min-width: 64px; text-align: right; font-weight: 600; font-family: var(--font-num, inherit); }
+.bill-newitem { margin: 0 0 10px; padding: 12px; }
+
+/* Stock Entry (kitchen) table: the shared .dish-table shrinks column 3 to its content,
+   which would squash the note field, so give the three columns explicit shares. */
+.dish-table.stock-table { table-layout: fixed; }
+.dish-table.stock-table th:nth-child(1), .dish-table.stock-table td:nth-child(1) { width: 34%; }
+.dish-table.stock-table th:nth-child(2), .dish-table.stock-table td:nth-child(2) { width: 26%; }
+.dish-table.stock-table td:nth-child(3) { width: auto; white-space: normal; font-family: inherit; }
+.dish-table.stock-table td { padding: 8px 10px; }
+.bill-lines + .btn { margin-bottom: 4px; }
+.bill-lines ~ .field-label, .bill-newitem ~ .field-label { margin-top: 14px; }
+
+/* Pack-aware bill lines */
+.bill-line-pick { display: flex; gap: 6px; align-items: center; }
+.bill-line-pick select { flex: 1; min-width: 0; margin-bottom: 0; }
+.bill-field { flex: 1; min-width: 120px; display: flex; flex-direction: column; gap: 2px; }
+.bill-field-label { font-size: 11px; color: var(--text-muted); }
+.bill-line-conv { font-size: 12px; color: var(--accent); font-weight: 600; }
+
+/* Pack manager (Inventory → Items) */
+.pack-list { display: flex; flex-direction: column; gap: 6px; margin: 10px 0 14px; }
+.pack-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; font-size: 13px;
+}
+.pack-row--off { opacity: 0.55; }
+.pack-row-actions { white-space: nowrap; }

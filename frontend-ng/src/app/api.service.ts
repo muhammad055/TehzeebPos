@@ -98,6 +98,52 @@ export interface PurchaseAttachment {
   uploadedAt: string;
 }
 
+export interface ItemPack {
+  id: number;
+  itemId: number;
+  name: string;
+  quantity: number;   // base units per pack
+  isActive: boolean;
+}
+
+export interface Item {
+  id: number;
+  name: string;
+  unit: string;
+  isActive: boolean;
+  packs: ItemPack[];
+}
+
+export interface PurchaseItem {
+  id: number;
+  itemId: number;
+  itemName: string;
+  unit: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+  packId: number | null;
+  packName: string;
+  packs: number | null;
+  packPrice: number | null;
+}
+
+export interface UsageEntry { itemId: number; quantity: number; note?: string; enteredBy?: string; }
+export interface CountResult { itemId: number; name: string; unit: string; counted: number; expected: number; variance: number; }
+export interface CountRow { itemId: number; countedQty: number; expectedQty: number; variance: number; note: string; }
+export interface OnHandRow {
+  itemId: number; name: string; unit: string; isActive: boolean;
+  lastCountDate: string | null; lastCountQty: number | null;
+  bought: number; used: number; expected: number; avgUnitCost: number; value: number;
+}
+export interface StockReportRow {
+  itemId: number; name: string; unit: string;
+  boughtQty: number; spend: number; avgUnitCost: number;
+  usedQty: number; usedValue: number;
+  counts: number; netVariance: number; shortageQty: number; shortageValue: number;
+}
+export interface StockReport { from: string; to: string; totalSpend: number; totalShortageValue: number; items: StockReportRow[]; }
+
 export interface Purchase {
   id: number;
   date: string;
@@ -107,6 +153,7 @@ export interface Purchase {
   imagePath?: string;
   category: string;
   attachments: PurchaseAttachment[];
+  items: PurchaseItem[];
 }
 
 export interface AppUser {
@@ -268,5 +315,47 @@ export class ApiService {
   }
   deletePurchaseAttachment(purchaseId: number, attachmentId: number) {
     return this.http.delete(`${this.base}/purchases/${purchaseId}/attachments/${attachmentId}`);
+  }
+
+  // Inventory items (readable by every role; writes are admin-only on the server)
+  readonly units = ['kg', 'g', 'L', 'ml', 'pcs', 'dozen', 'pack'];
+  getItems(includeInactive = false) {
+    return this.http.get<Item[]>(`${this.base}/items${includeInactive ? '?includeInactive=true' : ''}`);
+  }
+  createItem(name: string, unit: string, packs?: { name: string; quantity: number }[]) {
+    return this.http.post<Item>(`${this.base}/items`, { name, unit, packs });
+  }
+  createPack(itemId: number, name: string, quantity: number) {
+    return this.http.post<ItemPack>(`${this.base}/items/${itemId}/packs`, { name, quantity });
+  }
+  updatePack(itemId: number, packId: number, name: string, quantity: number, isActive?: boolean) {
+    return this.http.put<ItemPack>(`${this.base}/items/${itemId}/packs/${packId}`, { name, quantity, isActive });
+  }
+  deletePack(itemId: number, packId: number) {
+    return this.http.delete<{ deactivated: boolean }>(`${this.base}/items/${itemId}/packs/${packId}`);
+  }
+  updateItem(id: number, name: string, unit: string, isActive?: boolean) {
+    return this.http.put<Item>(`${this.base}/items/${id}`, { name, unit, isActive });
+  }
+  deleteItem(id: number) { return this.http.delete<{ deactivated: boolean }>(`${this.base}/items/${id}`); }
+
+  // Daily usage + physical counts (any role); on-hand + report (admin)
+  getUsage(date: string) {
+    return this.http.get<{ date: string; entries: UsageEntry[] }>(`${this.base}/stock/usage?date=${date}`);
+  }
+  saveUsage(date: string, entries: UsageEntry[]) {
+    return this.http.put<{ saved: number }>(`${this.base}/stock/usage`, { date, entries });
+  }
+  getCounts(date: string) {
+    return this.http.get<{ date: string; entries: CountRow[] }>(`${this.base}/stock/counts?date=${date}`);
+  }
+  saveCounts(date: string, entries: { itemId: number; countedQty: number; note?: string }[]) {
+    return this.http.post<{ date: string; results: CountResult[] }>(`${this.base}/stock/counts`, { date, entries });
+  }
+  getOnHand(asOf?: string) {
+    return this.http.get<{ asOf: string; items: OnHandRow[] }>(`${this.base}/stock/on-hand${asOf ? '?asOf=' + asOf : ''}`);
+  }
+  getStockReport(from: string, to: string) {
+    return this.http.get<StockReport>(`${this.base}/stock/report?from=${from}&to=${to}`);
   }
 }

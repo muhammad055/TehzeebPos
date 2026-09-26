@@ -7,6 +7,8 @@ import { LoginComponent } from './login/login.component';
 import { UsersComponent } from './users/users.component';
 import { ReportsComponent } from './reports/reports.component';
 import { PurchasesComponent } from './purchases/purchases.component';
+import { StockEntryComponent } from './inventory/stock-entry.component';
+import { InventoryComponent } from './inventory/inventory.component';
 import { authGuard, adminGuard } from './auth.guard';
 
 export const routes: Routes = [
@@ -19,4 +21,6 @@ export const routes: Routes = [
   { path: 'users',     component: UsersComponent,     canActivate: [adminGuard] },
   { path: 'reports',   component: ReportsComponent,   canActivate: [adminGuard] },
   { path: 'expenses',  component: PurchasesComponent, canActivate: [authGuard] },
+  { path: 'stock',     component: StockEntryComponent, canActivate: [authGuard] },
+  { path: 'inventory', component: InventoryComponent, canActivate: [adminGuard] },
 ];

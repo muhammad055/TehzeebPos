@@ -20,6 +20,8 @@ import { ThemeService, THEMES } from './theme.service';
         <a routerLink="/dashboard" routerLinkActive="active">Dashboard</a>
         <a routerLink="/pos"       routerLinkActive="active">Sales</a>
         <a routerLink="/expenses"  routerLinkActive="active">Expenses</a>
+        <a routerLink="/stock"     routerLinkActive="active">Stock Entry</a>
+        <a routerLink="/inventory" routerLinkActive="active" *ngIf="auth.isAdmin()">Inventory</a>
         <a routerLink="/orders"    routerLinkActive="active" *ngIf="auth.isAdmin()">Orders</a>
         <a routerLink="/admin"     routerLinkActive="active" *ngIf="auth.isAdmin()">Menu Setup</a>
         <a routerLink="/reports"   routerLinkActive="active" *ngIf="auth.isAdmin()">Reports</a>
